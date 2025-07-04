@@ -185,15 +185,15 @@ def _apply_ken_burns_effect(
     image_bgr: np.ndarray,
     video_width: int,
     video_height: int,
-    total_frames_for_effect: int,
     movement_type: str,
-    start_progress: float = 0.0  # Added back
+    full_animation_duration_frames: int, # Total frames the KB effect would span if played fully
+    generate_count: int,                 # How many frames to generate in this call
+    generate_from_frame_offset: int = 0  # Starting frame number within the full animation
 ) -> List[np.ndarray]:
     """
-    Applies a Ken Burns effect (pan and zoom) to an image.
-    Can start generating frames from a specific progress point in the effect.
+    Applies a Ken Burns effect (pan and zoom) to an image, generating a specific segment of it.
     """
-    # print(f"Applying Ken Burns: {movement_type} for {total_frames_for_effect} frames, start_progress: {start_progress}")
+    # print(f"KB: type={movement_type}, full_dur={full_animation_duration_frames}, gen_count={generate_count}, offset={generate_from_frame_offset}")
 
     frames = []
     img_h, img_w = image_bgr.shape[:2]
@@ -251,21 +251,34 @@ def _apply_ken_burns_effect(
     end_x = max(0, end_x) if not (img_w < crop_w_on_source) else (img_w - crop_w_on_source) // 2
     end_y = max(0, end_y) if not (img_h < crop_h_on_source) else (img_h - crop_h_on_source) // 2
 
+    # Ensure generate_count is at least 0, and if full_animation_duration_frames is 0, handle that.
+    if generate_count <= 0:
+        return frames # Return empty list if no frames are to be generated
 
-    if total_frames_for_effect <= 0: total_frames_for_effect = 1 # Must generate at least one frame
+    if full_animation_duration_frames <=0: # Should not happen with current calling logic
+        print(f"Warning: full_animation_duration_frames is {full_animation_duration_frames}. Cannot generate Ken Burns effect.")
+        # Fallback: create 'generate_count' static frames based on start_x, start_y if possible
+        # For simplicity, returning empty or black frames might be better.
+        # Let's return black frames for the generate_count.
+        for _ in range(generate_count):
+            frames.append(np.zeros((video_height, video_width, 3), dtype=np.uint8))
+        return frames
 
-    for i in range(total_frames_for_effect):
-        current_frame_progress = 0.0
-        if total_frames_for_effect == 1:
-            current_frame_progress = start_progress
-        elif total_frames_for_effect > 1:
-            normalized_frame_step = i / (total_frames_for_effect - 1)
-            current_frame_progress = start_progress + (normalized_frame_step * (1.0 - start_progress))
+    for k in range(generate_count):
+        current_animation_frame_index = generate_from_frame_offset + k
+        progress = 0.0
 
-        current_frame_progress = min(current_frame_progress, 1.0) # Ensure progress doesn't exceed 1.0
+        if full_animation_duration_frames == 1:
+            # If the entire animation is just one frame, progress is effectively at the start (or end).
+            # current_animation_frame_index should be 0.
+            progress = 0.0
+        elif full_animation_duration_frames > 1:
+            progress = current_animation_frame_index / (full_animation_duration_frames - 1)
 
-        current_x = int(round(start_x + (end_x - start_x) * current_frame_progress))
-        current_y = int(round(start_y + (end_y - start_y) * current_frame_progress))
+        progress = min(1.0, max(0.0, progress)) # Clamp progress between 0.0 and 1.0
+
+        current_x = int(round(start_x + (end_x - start_x) * progress))
+        current_y = int(round(start_y + (end_y - start_y) * progress))
 
         # Define the actual crop window, ensuring it's within image bounds
         # current_x, current_y is top-left of the crop on source
@@ -454,40 +467,54 @@ def _generate_visual_frames(
             continue
 
         # --- Main Display for Image A (current image `i`) ---
-        # Determine start progress for Image A's main display (accounts for its own fade-in if i > 0)
-        image_A_kb_start_progress = 0.0
-        if i > 0 and frames_per_fade > 0: # If Image A faded in
-            # Progress is based on ITS total segment length if that was different,
-            # but frames_per_fade is constant.
-            # This assumes total_frames_for_segment is for the *current* image A.
-            if total_frames_for_segment > 0: # total_frames_for_segment here is for current image A
-                image_A_kb_start_progress = min(1.0, frames_per_fade / total_frames_for_segment)
+        # --- Main Display for Image A (current image `i`) ---
+        # Determine frame offset for Image A's main display (accounts for its own fade-in if i > 0)
+        frame_offset_A_main = 0
+        if i > 0 and frames_per_fade > 0: # If Image A (current_img_bgr) faded in
+            # It already showed 'frames_per_fade' frames of its animation.
+            frame_offset_A_main = frames_per_fade
+            # We must ensure frames_for_A_main_display is not asking for more frames than available
+            # after this offset from its total_frames_for_segment.
+            # frames_for_A_main_display was calculated as total_frames_for_segment - frames_for_A_fade_out.
+            # This is the number of frames for this "main" slot.
+            # If frame_offset_A_main >= frames_for_A_main_display (for very short clips),
+            # then this main part might be skipped or short.
 
         ken_burns_frames_A_main = []
-        if frames_for_A_main_display > 0:
+        actual_frames_to_generate_A_main = frames_for_A_main_display
+        if frame_offset_A_main + actual_frames_to_generate_A_main > total_frames_for_segment:
+            # This condition implies that the time taken by fade-in (frame_offset_A_main)
+            # plus the planned main display time exceeds the total time for the image.
+            # This usually means the main display period needs to be shortened.
+            # However, frames_for_A_main_display is already total_segment - fade_out_A.
+            # So, this path means total_segment < fade_in + fade_out.
+            # The KB during main display should be what's left.
+            actual_frames_to_generate_A_main = max(0, total_frames_for_segment - frame_offset_A_main - frames_for_A_fade_out)
+
+
+        if actual_frames_to_generate_A_main > 0 :
             ken_burns_frames_A_main = _apply_ken_burns_effect(
-                current_img_bgr, video_width, video_height,
-                frames_for_A_main_display, current_movement_type,
-                start_progress=image_A_kb_start_progress
+                image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
+                movement_type=current_movement_type,
+                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                generate_count=actual_frames_to_generate_A_main,
+                generate_from_frame_offset=frame_offset_A_main
             )
             for frame in ken_burns_frames_A_main:
                 video_writer.write(frame)
 
         # --- Cross-Fade from Image A to Image B (next image `i+1`) ---
         if i < num_narrations - 1 and frames_for_A_fade_out > 0:
-            # Calculate start progress for Image A's fade-out component
-            # This is the progress point *after* its main display part has finished.
-            start_progress_A_fade_component = 0.0
-            if total_frames_for_segment > 0:
-                # Total progress shown so far for image A = start_progress_A + duration_of_main_display_A_as_progress
-                progress_at_end_of_A_main = image_A_kb_start_progress + \
-                                           (frames_for_A_main_display / total_frames_for_segment) * (1.0 - image_A_kb_start_progress)
-                start_progress_A_fade_component = min(1.0, progress_at_end_of_A_main)
+            # Calculate frame offset for Image A's fade-out component
+            # This is after its initial offset (if any) and its main display part.
+            frame_offset_A_fade_component = frame_offset_A_main + actual_frames_to_generate_A_main
 
             kb_frames_A_for_fade_component = _apply_ken_burns_effect(
-                current_img_bgr, video_width, video_height,
-                frames_for_A_fade_out, current_movement_type,
-                start_progress=start_progress_A_fade_component
+                image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
+                movement_type=current_movement_type,
+                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                generate_count=frames_for_A_fade_out,
+                generate_from_frame_offset=frame_offset_A_fade_component
             )
 
             # Load Image B (next image)
@@ -497,7 +524,7 @@ def _generate_visual_frames(
                 last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else \
                                      (kb_frames_A_for_fade_component[-1] if kb_frames_A_for_fade_component else None)
                 if last_frame_A_to_hold is None: # Still no frame, generate one
-                     temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, 1, current_movement_type, start_progress=start_progress_A_fade_component)
+                     temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
                      if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
 
                 if last_frame_A_to_hold is not None:
@@ -506,15 +533,30 @@ def _generate_visual_frames(
                     black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
                     for _ in range(frames_for_A_fade_out): video_writer.write(black_frame)
             else:
+                # Determine full animation duration for Image B
+                next_narration_audio_path = os.path.join(narration_dir, f"narration_{(i + 1) + 1}.mp3") # index for narration is 1-based
+                next_segment_duration_ms = get_audio_duration_ms(next_narration_audio_path)
+                if next_segment_duration_ms == 0:
+                    print(f"Warning: Audio duration for next image {next_image_for_fade_path} is 0 for fade calculation. Defaulting to 1s.")
+                    next_segment_duration_ms = 1000
+
+                total_frames_for_segment_B = math.floor(next_segment_duration_ms / 1000 * frame_rate)
+                if total_frames_for_segment_B == 0 and next_segment_duration_ms > 0: total_frames_for_segment_B = 1
+                if total_frames_for_segment_B <= 0: # Fallback if it's still zero or less
+                    print(f"Warning: total_frames_for_segment_B for {next_image_for_fade_path} is {total_frames_for_segment_B}. Using frames_for_A_fade_out as fallback full duration for its KB portion.")
+                    total_frames_for_segment_B = frames_for_A_fade_out # Use fade duration as a rough guess
+
                 next_image_movement_type_index = (ken_burns_sequence_index + 1) % len(KEN_BURNS_SEQUENCE)
                 next_image_movement_type = KEN_BURNS_SEQUENCE[next_image_movement_type_index]
 
                 # Image B starts its KB from the beginning for the fade-in
+                # It generates 'frames_for_A_fade_out' frames, which is the first part of its own full KB animation.
                 kb_frames_B_for_fade_component = _apply_ken_burns_effect(
-                    next_img_bgr, video_width, video_height,
-                    frames_for_A_fade_out, # Duration of fade is dictated by Image A's fade out
-                    next_image_movement_type,
-                    start_progress=0.0
+                    image_bgr=next_img_bgr, video_width=video_width, video_height=video_height,
+                    movement_type=next_image_movement_type,
+                    full_animation_duration_frames=total_frames_for_segment_B, # Image B's own total KB duration
+                    generate_count=frames_for_A_fade_out, # Generate frames for the duration of the fade
+                    generate_from_frame_offset=0 # Start from the beginning of Image B's KB
                 )
 
                 num_blend_frames = min(len(kb_frames_A_for_fade_component), len(kb_frames_B_for_fade_component))
@@ -523,26 +565,25 @@ def _generate_visual_frames(
 
                 if num_blend_frames == 0:
                     print(f"Error: Could not generate KB frames for fade. Holding last frame of current image.")
-                    last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else None # Check main display first
-                    if last_frame_A_to_hold is None: # If no main display, try to get a start frame of A
-                        temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, 1, current_movement_type, start_progress=start_progress_A_fade_component)
+                    last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else None
+                    if last_frame_A_to_hold is None:
+                        temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
                         if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
 
                     if last_frame_A_to_hold is not None:
                         for _ in range(frames_for_A_fade_out): video_writer.write(last_frame_A_to_hold)
-                    else: # Total fallback
+                    else:
                         black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
                         for _ in range(frames_for_A_fade_out): video_writer.write(black_frame)
                 else:
                     for k in range(num_blend_frames):
                         frame_A = kb_frames_A_for_fade_component[k]
                         frame_B = kb_frames_B_for_fade_component[k]
-                        alpha = (k + 1) / frames_for_A_fade_out # Alpha for Image B (fading in)
+                        alpha = (k + 1) / frames_for_A_fade_out
                         blended_frame = cv2.addWeighted(frame_A, 1.0 - alpha, frame_B, alpha, 0)
                         video_writer.write(blended_frame)
 
                     if num_blend_frames > 0 and num_blend_frames < frames_for_A_fade_out:
-                        # Hold the last successfully blended frame if fade was cut short by lack of source frames
                         last_blended_frame = cv2.addWeighted(
                             kb_frames_A_for_fade_component[num_blend_frames-1],
                             1.0 - (num_blend_frames / frames_for_A_fade_out),
@@ -551,24 +592,19 @@ def _generate_visual_frames(
                         for _ in range(frames_for_A_fade_out - num_blend_frames):
                             video_writer.write(last_blended_frame)
 
-        else: # This is the last image segment OR no fade is active (frames_per_fade == 0)
-              # Ensure any remaining frames from total_frames_for_segment are filled if main display was short or didn't happen.
+        else:
             frames_written_so_far = len(ken_burns_frames_A_main)
-            # If frames_for_A_main_display was 0, frames_written_so_far is 0.
-            # total_frames_for_segment should be filled.
             remaining_frames_in_segment = total_frames_for_segment - frames_written_so_far
 
             if remaining_frames_in_segment > 0:
                 last_frame_to_hold = None
-                if ken_burns_frames_A_main: # Frames from main display exist
+                if ken_burns_frames_A_main:
                     last_frame_to_hold = ken_burns_frames_A_main[-1]
-                elif total_frames_for_segment > 0 : # No main display frames, but segment had duration (e.g. all was for fade, but it's last image)
-                    # Generate the very first frame of its KB and hold that.
-                    temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, 1, current_movement_type, start_progress=image_A_kb_start_progress)
+                elif total_frames_for_segment > 0 :
+                    temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_main)
                     if temp_A_frame: last_frame_to_hold = temp_A_frame[0]
 
                 if last_frame_to_hold is not None:
-                    # print(f"Last segment/No fade: Holding frame for image {i+1} for {remaining_frames_in_segment} frames.")
                     for _ in range(remaining_frames_in_segment):
                         video_writer.write(last_frame_to_hold)
                 else:
@@ -577,7 +613,7 @@ def _generate_visual_frames(
                     for _ in range(remaining_frames_in_segment):
                         video_writer.write(black_frame)
 
-        ken_burns_sequence_index += 1 # Move to next effect in sequence for next image
+        ken_burns_sequence_index += 1
 
     return True
 
