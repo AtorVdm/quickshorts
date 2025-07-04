@@ -708,8 +708,6 @@ def create_short_video(
     final_video_full_path = os.path.join(base_dir, final_output_filename)
     print(f"Adding captions to video, outputting to: {final_video_full_path}")
     try:
-        with open("test.txt", "w", encoding='utf-8') as f:
-            f.write(json.dumps(caption_segments))
         captacity.add_captions(
             video_file=video_with_narration_path,
             output_file=final_video_full_path,
