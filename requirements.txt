@@ -1,0 +1,6 @@
+opencv-python
+captacity
+openai
+pydub
+numpy
+azure-core
