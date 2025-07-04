@@ -7,20 +7,25 @@ Quickshorts is a tool for making AI generated short videos. Captions with word h
 First, add your API-keys to the environment:
 
 ```console
+$ export OPENAI_API_URL=YOUR_OPENAI_API_URL
 $ export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 $ export AZURE_API_KEY=YOUR_AZURE_API_KEY
 $ export AZURE_REGION=YOUR_AZURE_REGION
 ```
 
-Then, put your source content in a file, for example `source.txt` and run the `main.py`:
+Then, put your source content in a file, for example `some_story.txt` and run the `main.py`:
 
 ```console
-$ ./main.py source.txt
-Generating script...
-Generating narration...
+$ ./main.py some_story.txt
+Generating script with OpenAI...
+Generating narration audio...
 Generating images...
 Generating video...
-DONE! Here's your video: shorts/1701788183/short.avi
+Creating segments for captions...
+Extracting audio...
+Generating video elements...
+Rendering video...
+DONE! Here's your video: shorts/some_story/some_story.avi
 ```
 
 ## Caption styling
@@ -28,7 +33,7 @@ DONE! Here's your video: shorts/1701788183/short.avi
 Optionally, you can specify a settings file to define settings for the caption styling:
 
 ```console
-$ ./main.py source.txt settings.json
+$ ./main.py some_story.txt settings.json
 ```
 
 The settings file can look like this, for example:
