@@ -454,17 +454,3 @@ def _offset_timestamps_in_segments(segments: List[Dict[str, Any]], offset_s: flo
         new_segment["words"] = adjusted_words
         adjusted_segments.append(new_segment)
     return adjusted_segments
-
-# Renamed functions to be more descriptive and indicate private/internal use with underscore
-# Original names:
-# parse -> parse_narration_text (in short_narration.py)
-# create -> create_narration_audio_files (in short_narration.py)
-# generate_azure_audio_ssml -> _generate_azure_tts_audio (in short_narration.py)
-# create_from_data -> create_from_data (in short_images.py, kept same but improved)
-# generate -> generate_image (in short_images.py)
-# get_audio_duration -> get_audio_duration_ms
-# add_narration_to_video -> _combine_narrations_and_add_to_video
-# resize_image -> _resize_image_to_fit_canvas
-# create -> create_short_video (main function in this module)
-# create_segments -> _create_caption_segments
-# offset_segments -> _offset_timestamps_in_segments
