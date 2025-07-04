@@ -13,43 +13,28 @@ import os
 from typing import Dict, Any, List, Tuple, Optional
 
 # Import project modules
-import short_narration
-import short_images
-import short_video
-from openai_client import initialize_openai_client # Corrected import
+from . import short_narration
+from . import short_images
+from . import short_video
+from .openai_client import initialize_openai_client # Corrected import
 import openai # For type hinting
 
-# System prompt for YouTube Short narration generation (defined once)
-NARRATION_SYSTEM_PROMPT_TEXT = """You are a YouTube short narration generator. You generate 50 seconds to 70 seconds of narration. The shorts you create have a background that fades from image to image as the narration is going on.
+# Path to the narration prompt file
+PROMPT_FILE_PATH = os.path.join(os.path.dirname(__file__), "prompts", "narration_prompt.txt")
 
-You will need to generate descriptions of images for each of the sentences in the short. The image descriptions should use the key words from the content they describe. They will be passed to an AI image generator. Mention that the image should occupy the entire picture without cuts on any side. DO NOT IN ANY CIRCUMSTANCES use names of celebrities or people in the image descriptions. It is illegal to generate images of celebrities. Only describe persons without their names. Do not reference any real person or group in the image descriptions. Don't mention the female figure or other sexual content in the images because they are not allowed.
-
-You are however allowed to use any content, including real names in the narration. Only image descriptions are restricted.
-
-Note that the narration will be fed into a text-to-speech engine, so don't use special characters.
-
-Respond with a pair of an image description in square brackets and a narration below it. Both of them should be on their own lines, as follows:
-
-###
-
-[Description of a background image]
-
-Narrator: "One sentence of narration"
-
-[Description of a background image]
-
-Narrator: "One sentence of narration"
-
-[Description of a background image]
-
-Narrator: "One sentence of narration"
-
-###
-
-The short should be 6 sentences maximum.
-
-You should add a description of a fitting backround image in between all of the narrations. It will later be used to generate an image with AI.
-"""
+def load_narration_prompt(file_path: str) -> str:
+    """Loads the narration prompt from a text file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"Error: Narration prompt file not found at {file_path}")
+        # Fallback to a default minimal prompt or exit, depending on desired behavior
+        # For now, exiting as it's a critical component.
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error reading narration prompt file {file_path}: {e}")
+        sys.exit(1)
 
 class AppConfig:
     """Holds all configuration for the application."""
@@ -82,10 +67,15 @@ class AppConfig:
         self.fade_duration_ms: int = 1000
 
         self.caption_settings: Dict[str, Any] = {}
-        self.narration_system_prompt: str = NARRATION_SYSTEM_PROMPT_TEXT
+        # Load the narration prompt from the file or use a default if overridden by settings
+        self.narration_system_prompt: str = load_narration_prompt(PROMPT_FILE_PATH)
+
 
         self._load_settings_from_file() # Load from JSON, potentially overriding above
-        self._setup_paths() # Setup derived paths
+        # If narration_system_prompt was NOT in JSON, it remains the one loaded from file.
+        # If it WAS in JSON, it gets overridden by the JSON value below.
+
+        self._initialize_paths()
 
     def _load_settings_from_file(self) -> None:
         if not self.settings_file_path:
@@ -117,9 +107,17 @@ class AppConfig:
         except Exception as e:
             print(f"Error reading settings file {self.settings_file_path}: {e}. Using default/env settings.")
 
-    def _setup_paths(self) -> None:
+    def _initialize_paths(self) -> None:
+        """Sets up derived file and directory paths based on the source file."""
         self.short_name = os.path.splitext(os.path.basename(self.source_file_path))[0]
-        self.base_output_dir = os.path.join("shorts", self.short_name)
+        # Output paths should be relative to the script's execution directory,
+        # or a more robust configurable output directory.
+        # For now, let's assume 'shorts' directory is created where the script is run.
+        # If main.py is in src/, this means shorts/ will be sibling to src/
+        # To ensure 'shorts' is at the project root, we can use os.path.abspath and go up one level from __file__
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.base_output_dir = os.path.join(project_root, "shorts", self.short_name)
+
         self.narration_output_dir = os.path.join(self.base_output_dir, "narrations")
         self.image_output_dir = os.path.join(self.base_output_dir, "images")
         self.final_video_file_path = os.path.join(self.base_output_dir, f"{self.short_name}.mp4")
