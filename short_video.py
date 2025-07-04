@@ -152,11 +152,243 @@ def _create_frame_with_centered_image(
     """Creates a black frame and centers the resized image onto it."""
     frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
     # Calculate offsets to center the image
-    y_offset = (video_height - image_resized.shape[0]) // 2
-    x_offset = (video_width - image_resized.shape[1]) // 2
-    # Place the image on the frame
-    frame[y_offset:y_offset+image_resized.shape[0], x_offset:x_offset+image_resized.shape[1]] = image_resized
+    img_h, img_w = image_resized.shape[:2]
+    y_offset = (video_height - img_h) // 2
+    x_offset = (video_width - img_w) // 2
+
+    # Ensure offsets are not negative (can happen if resized image is larger than canvas, though _resize should prevent)
+    y_offset = max(0, y_offset)
+    x_offset = max(0, x_offset)
+
+    # Ensure the slice does not go out of bounds of the frame
+    y_end = min(video_height, y_offset + img_h)
+    x_end = min(video_width, x_offset + img_w)
+
+    # Ensure the slice does not go out of bounds of the image_resized
+    img_y_end = min(img_h, y_end - y_offset)
+    img_x_end = min(img_w, x_end - x_offset)
+
+    frame[y_offset:y_end, x_offset:x_end] = image_resized[0:img_y_end, 0:img_x_end]
     return frame
+
+
+# Define Ken Burns movement sequence
+KEN_BURNS_SEQUENCE = [
+    "top_left_to_bottom_right",
+    "bottom_left_to_top_right",
+    "top_right_to_bottom_left",
+    "bottom_right_to_top_left",
+]
+ken_burns_sequence_index = 0
+
+def _apply_ken_burns_effect(
+    image_bgr: np.ndarray,
+    video_width: int,
+    video_height: int,
+    movement_type: str,
+    full_animation_duration_frames: int, # Total frames the KB effect would span if played fully
+    generate_count: int,                 # How many frames to generate in this call
+    generate_from_frame_offset: int = 0  # Starting frame number within the full animation
+) -> List[np.ndarray]:
+    """
+    Applies a Ken Burns effect (pan and zoom) to an image, generating a specific segment of it.
+    """
+    # print(f"KB: type={movement_type}, full_dur={full_animation_duration_frames}, gen_count={generate_count}, offset={generate_from_frame_offset}")
+
+    frames = []
+    img_h, img_w = image_bgr.shape[:2]
+
+    zoom_level = 0.8 # We see 80% of the image content, so effectively zoom in by 1/0.8 = 1.25
+
+    # crop_w_on_source and crop_h_on_source are the dimensions of the window
+    # cut from the original image. This window will be resized to video_width, video_height.
+    # For the effective zoom to be 1.25, this window should be 1/1.25 = 0.8 times
+    # the video dimensions, if the image was already at video resolution.
+    # More generally, this is the part of the *source* image that will be shown.
+    # The size of this crop window on the source image needs to maintain the video's aspect ratio.
+
+    crop_w_on_source = int(round(video_width / (1/zoom_level))) # video_width * zoom_level
+    crop_h_on_source = int(round(video_height / (1/zoom_level))) # video_height * zoom_level
+
+    # Ensure crop dimensions are at least 1x1
+    crop_w_on_source = max(1, crop_w_on_source)
+    crop_h_on_source = max(1, crop_h_on_source)
+
+    # Define movement start and end points (top-left corner of the crop window)
+    # These are relative to the original image_bgr
+    start_x, start_y = 0, 0
+    end_x, end_y = 0, 0
+
+    # Max possible top-left coordinates for the crop window
+    max_crop_x = img_w - crop_w_on_source
+    max_crop_y = img_h - crop_h_on_source
+
+    # If image is smaller than crop window after zoom, center the crop.
+    if max_crop_x < 0: # Image width is less than the width of the crop window
+        start_x = end_x = (img_w - crop_w_on_source) // 2 # Negative offset, effectively
+        max_crop_x = (img_w - crop_w_on_source) // 2 # This will make the pan range 0
+    if max_crop_y < 0: # Image height is less than the height of the crop window
+        start_y = end_y = (img_h - crop_h_on_source) // 2
+        max_crop_y = (img_h - crop_h_on_source) // 2
+
+
+    if movement_type == "top_left_to_bottom_right":
+        start_x, start_y = 0, 0
+        end_x, end_y = max_crop_x, max_crop_y
+    elif movement_type == "bottom_left_to_top_right":
+        start_x, start_y = 0, max_crop_y
+        end_x, end_y = max_crop_x, 0
+    elif movement_type == "top_right_to_bottom_left":
+        start_x, start_y = max_crop_x, 0
+        end_x, end_y = 0, max_crop_y
+    elif movement_type == "bottom_right_to_top_left":
+        start_x, start_y = max_crop_x, max_crop_y
+        end_x, end_y = 0, 0
+
+    # Ensure start/end coordinates are non-negative if image was smaller than crop
+    start_x = max(0, start_x) if not (img_w < crop_w_on_source) else (img_w - crop_w_on_source) // 2
+    start_y = max(0, start_y) if not (img_h < crop_h_on_source) else (img_h - crop_h_on_source) // 2
+    end_x = max(0, end_x) if not (img_w < crop_w_on_source) else (img_w - crop_w_on_source) // 2
+    end_y = max(0, end_y) if not (img_h < crop_h_on_source) else (img_h - crop_h_on_source) // 2
+
+    # Ensure generate_count is at least 0, and if full_animation_duration_frames is 0, handle that.
+    if generate_count <= 0:
+        return frames # Return empty list if no frames are to be generated
+
+    if full_animation_duration_frames <=0: # Should not happen with current calling logic
+        print(f"Warning: full_animation_duration_frames is {full_animation_duration_frames}. Cannot generate Ken Burns effect.")
+        # Fallback: create 'generate_count' static frames based on start_x, start_y if possible
+        # For simplicity, returning empty or black frames might be better.
+        # Let's return black frames for the generate_count.
+        for _ in range(generate_count):
+            frames.append(np.zeros((video_height, video_width, 3), dtype=np.uint8))
+        return frames
+
+    for k in range(generate_count):
+        current_animation_frame_index = generate_from_frame_offset + k
+        progress = 0.0
+
+        if full_animation_duration_frames == 1:
+            # If the entire animation is just one frame, progress is effectively at the start (or end).
+            # current_animation_frame_index should be 0.
+            progress = 0.0
+        elif full_animation_duration_frames > 1:
+            progress = current_animation_frame_index / (full_animation_duration_frames - 1)
+
+        progress = min(1.0, max(0.0, progress)) # Clamp progress between 0.0 and 1.0
+
+        current_x = int(round(start_x + (end_x - start_x) * progress))
+        current_y = int(round(start_y + (end_y - start_y) * progress))
+
+        # Define the actual crop window, ensuring it's within image bounds
+        # current_x, current_y is top-left of the crop on source
+        crop_x1 = max(0, current_x)
+        crop_y1 = max(0, current_y)
+
+        # If image is smaller than crop window, adjust crop to take what's available
+        # and the output will have black bars (or be centered later).
+        # The crop_w_on_source/crop_h_on_source are what we *want* to grab.
+        actual_crop_w = crop_w_on_source
+        actual_crop_h = crop_h_on_source
+
+        # If current_x was negative (image smaller than crop window, centered)
+        # crop_x1 will be 0. We need to adjust where this crop is placed on the final frame.
+        paste_x_offset = 0
+        paste_y_offset = 0
+
+        if current_x < 0:
+            actual_crop_w = img_w # crop the whole image width
+            crop_x1 = 0
+            # The amount of black bar needed on the left
+            paste_x_offset = int(round(abs(current_x) * (video_width / crop_w_on_source)))
+        else:
+            actual_crop_w = min(crop_w_on_source, img_w - crop_x1)
+
+        if current_y < 0:
+            actual_crop_h = img_h # crop the whole image height
+            crop_y1 = 0
+            paste_y_offset = int(round(abs(current_y) * (video_height / crop_h_on_source)))
+        else:
+            actual_crop_h = min(crop_h_on_source, img_h - crop_y1)
+
+        # Ensure actual crop dimensions are positive
+        if actual_crop_w <= 0 or actual_crop_h <= 0:
+            # This can happen if image is tiny or crop calculations are off.
+            # Fallback to a black frame or a centered full image.
+            # For now, let's try to make a frame with what we have or black.
+            print(f"Warning: Ken Burns crop dimension is zero or negative ({actual_crop_w}x{actual_crop_h}). Creating black frame.")
+            black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+            frames.append(black_frame)
+            continue
+
+        cropped_image_part = image_bgr[crop_y1 : crop_y1 + actual_crop_h, crop_x1 : crop_x1 + actual_crop_w]
+
+        if cropped_image_part.size == 0:
+             print(f"Warning: Ken Burns cropped_image_part is empty. Creating black frame.")
+             black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+             frames.append(black_frame)
+             continue
+
+        # Resize the (potentially partial) crop to fill the video frame dimensions
+        # The target size for resize depends on whether we cropped less than desired due to image boundaries.
+
+        # If we took less than crop_w_on_source, we need to scale it to video_width proportionally.
+        # Example: crop_w_on_source=800, video_width=1080. actual_crop_w=400 (half).
+        # Resized width should be 1080/2 = 540.
+        target_w_for_resize = video_width
+        target_h_for_resize = video_height
+
+        if current_x < 0 or (crop_x1 + actual_crop_w < current_x + crop_w_on_source and current_x >=0) : # We are grabbing less width than the ideal crop window
+             target_w_for_resize = int(round(actual_crop_w * (video_width / crop_w_on_source)))
+        if current_y < 0 or (crop_y1 + actual_crop_h < current_y + crop_h_on_source and current_y >=0): # We are grabbing less height
+             target_h_for_resize = int(round(actual_crop_h * (video_height / crop_h_on_source)))
+
+        target_w_for_resize = max(1, target_w_for_resize)
+        target_h_for_resize = max(1, target_h_for_resize)
+
+        resized_crop = cv2.resize(cropped_image_part, (target_w_for_resize, target_h_for_resize), interpolation=cv2.INTER_LANCZOS4)
+
+        # Create a black canvas for the final frame
+        final_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+
+        # Paste the resized_crop onto the final_frame, considering offsets
+        # Offsets are needed if the source image was smaller than the conceptual zoomed crop window
+
+        # Calculate actual paste position to center the (potentially smaller) resized_crop
+        current_paste_x = paste_x_offset
+        current_paste_y = paste_y_offset
+
+        # If the image was larger and panned normally, paste_x_offset is 0.
+        # If the image was smaller, paste_x_offset handles the left black bar.
+        # We also need to handle the right black bar if target_w_for_resize < video_width.
+        if target_w_for_resize < video_width and paste_x_offset == 0 : # Centering for content smaller than video frame
+            current_paste_x = (video_width - target_w_for_resize) // 2
+        if target_h_for_resize < video_height and paste_y_offset == 0 :
+            current_paste_y = (video_height - target_h_for_resize) // 2
+
+        # Ensure paste coordinates are within frame bounds
+        current_paste_x = max(0, current_paste_x)
+        current_paste_y = max(0, current_paste_y)
+
+        paste_h, paste_w = resized_crop.shape[:2]
+
+        y_slice_end = min(video_height, current_paste_y + paste_h)
+        x_slice_end = min(video_width, current_paste_x + paste_w)
+
+        img_slice_h = min(paste_h, y_slice_end - current_paste_y)
+        img_slice_w = min(paste_w, x_slice_end - current_paste_x)
+
+        if img_slice_h > 0 and img_slice_w > 0:
+            final_frame[current_paste_y:y_slice_end, current_paste_x:x_slice_end] = resized_crop[0:img_slice_h, 0:img_slice_w]
+
+        frames.append(final_frame)
+
+    if not frames: # Should have been handled by total_frames_for_effect >= 1
+        print("Warning: Ken Burns effect produced no frames. Returning a single black frame.")
+        black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+        frames.append(black_frame)
+
+    return frames
 
 
 def _generate_visual_frames(
@@ -170,11 +402,11 @@ def _generate_visual_frames(
     fade_duration_ms: int
 ) -> bool:
     """
-    Generates and writes all visual frames (images with transitions) to the video_writer.
-
-    Returns:
-        True if successful, False if critical errors occur (e.g., no images).
+    Generates and writes all visual frames (images with Ken Burns effect and transitions)
+    to the video_writer.
     """
+    global ken_burns_sequence_index # Use the global index
+
     image_files = sorted([
         os.path.join(image_dir, f) for f in os.listdir(image_dir)
         if f.startswith("image_") and f.endswith(".webp")
@@ -187,59 +419,202 @@ def _generate_visual_frames(
         return False
 
     frames_per_fade = math.floor(fade_duration_ms / 1000 * frame_rate)
+    # Ensure frames_per_fade is at least 1 if fade_duration_ms > 0, otherwise it can be 0
+    if fade_duration_ms > 0 and frames_per_fade == 0:
+        frames_per_fade = 1
+
 
     for i in range(num_narrations):
         current_image_path = image_files[i % num_images]
-        next_image_idx = (i + 1) % num_images
-        # For the last narration, the "next" image for fade is the current image itself (hold)
-        next_image_path = image_files[next_image_idx] if i + 1 < num_narrations else current_image_path
+        # Determine next image for potential crossfade
+        # If it's the last narration segment, next_image is the same as current for the "hold"
+        next_image_for_fade_path = image_files[(i + 1) % num_images] if i < num_narrations - 1 else current_image_path
 
-        img1_bgr = cv2.imread(current_image_path)
-        img2_bgr = cv2.imread(next_image_path)
-
-        if img1_bgr is None:
+        current_img_bgr = cv2.imread(current_image_path)
+        if current_img_bgr is None:
             print(f"Error: Could not read image {current_image_path}. Skipping visual segment.")
-            # Attempt to write black frames for the expected duration? Or just skip?
-            # For now, skipping, which might desync audio if not handled.
             continue
-        if img2_bgr is None: # Should only happen if next_image_path was different and failed
-            print(f"Error: Could not read next image {next_image_path}. Using current image for fade.")
-            img2_bgr = img1_bgr.copy()
 
-        img1_resized = _resize_image_to_fit_canvas(img1_bgr, video_width, video_height)
-        img2_resized = _resize_image_to_fit_canvas(img2_bgr, video_width, video_height)
-
-        frame1 = _create_frame_with_centered_image(img1_resized, video_width, video_height)
-        frame2 = _create_frame_with_centered_image(img2_resized, video_width, video_height)
-
+        # Get duration of the current narration segment
         narration_audio_path = os.path.join(narration_dir, f"narration_{i+1}.mp3")
         segment_duration_ms = get_audio_duration_ms(narration_audio_path)
+        if segment_duration_ms == 0: # If audio duration is zero, try to make it a short default
+            print(f"Warning: Audio duration for {narration_audio_path} is 0. Defaulting to 1s for frame calculation.")
+            segment_duration_ms = 1000 # Default to 1 second
 
-        static_duration_ms = segment_duration_ms
-        # Adjust for fade in only if not the first segment
-        if i > 0:
-            static_duration_ms -= fade_duration_ms / 2
-        # Adjust for fade out only if not the last segment
-        if i < num_narrations - 1:
-            static_duration_ms -= fade_duration_ms / 2
+        total_frames_for_segment = math.floor(segment_duration_ms / 1000 * frame_rate)
+        if total_frames_for_segment == 0 and segment_duration_ms > 0 : total_frames_for_segment = 1
 
-        static_duration_ms = max(0, static_duration_ms)
-        num_static_frames = math.floor(static_duration_ms / 1000 * frame_rate)
 
-        for _ in range(num_static_frames):
-            video_writer.write(frame1)
+        # Determine Ken Burns effect for the current image
+        current_movement_type = KEN_BURNS_SEQUENCE[ken_burns_sequence_index % len(KEN_BURNS_SEQUENCE)]
+        print(f"Image {i+1}: Using Ken Burns effect '{current_movement_type}'")
 
-        # Perform fade to next image only if not the last narration segment and fade is needed
-        if i < num_narrations - 1 and frames_per_fade > 0:
-            for alpha in np.linspace(0, 1, frames_per_fade): # type: ignore
-                blended_frame = cv2.addWeighted(frame1, 1 - alpha, frame2, alpha, 0)
-                video_writer.write(blended_frame)
-        elif i == num_narrations - 1: # Last segment, hold its frame for a duration equivalent to a fade out
-            # This ensures the video doesn't end abruptly if total audio is slightly longer
-            # than image presentation time due to rounding or minimum fade time.
-            hold_frames = frames_per_fade
-            for _ in range(hold_frames):
-                 video_writer.write(frame1)
+        # Determine frame allocation for current image (Image A)
+        frames_for_A_main_display = total_frames_for_segment
+        frames_for_A_fade_out = 0
+
+        if i < num_narrations - 1 and frames_per_fade > 0: # If not the last image and fade is active
+            frames_for_A_fade_out = frames_per_fade
+            frames_for_A_main_display = max(0, total_frames_for_segment - frames_for_A_fade_out)
+            if frames_for_A_main_display == 0 and total_frames_for_segment > 0:
+                # Segment too short for main display + fade out, KB happens only during fade out
+                frames_for_A_fade_out = total_frames_for_segment
+
+        if total_frames_for_segment <= 0:
+            print(f"Skipping visual segment for image {i+1} as total_frames_for_segment is {total_frames_for_segment}.")
+            ken_burns_sequence_index += 1
+            continue
+
+        # --- Main Display for Image A (current image `i`) ---
+        # --- Main Display for Image A (current image `i`) ---
+        # Determine frame offset for Image A's main display (accounts for its own fade-in if i > 0)
+        frame_offset_A_main = 0
+        if i > 0 and frames_per_fade > 0: # If Image A (current_img_bgr) faded in
+            # It already showed 'frames_per_fade' frames of its animation.
+            frame_offset_A_main = frames_per_fade
+            # We must ensure frames_for_A_main_display is not asking for more frames than available
+            # after this offset from its total_frames_for_segment.
+            # frames_for_A_main_display was calculated as total_frames_for_segment - frames_for_A_fade_out.
+            # This is the number of frames for this "main" slot.
+            # If frame_offset_A_main >= frames_for_A_main_display (for very short clips),
+            # then this main part might be skipped or short.
+
+        ken_burns_frames_A_main = []
+        actual_frames_to_generate_A_main = frames_for_A_main_display
+        if frame_offset_A_main + actual_frames_to_generate_A_main > total_frames_for_segment:
+            # This condition implies that the time taken by fade-in (frame_offset_A_main)
+            # plus the planned main display time exceeds the total time for the image.
+            # This usually means the main display period needs to be shortened.
+            # However, frames_for_A_main_display is already total_segment - fade_out_A.
+            # So, this path means total_segment < fade_in + fade_out.
+            # The KB during main display should be what's left.
+            actual_frames_to_generate_A_main = max(0, total_frames_for_segment - frame_offset_A_main - frames_for_A_fade_out)
+
+
+        if actual_frames_to_generate_A_main > 0 :
+            ken_burns_frames_A_main = _apply_ken_burns_effect(
+                image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
+                movement_type=current_movement_type,
+                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                generate_count=actual_frames_to_generate_A_main,
+                generate_from_frame_offset=frame_offset_A_main
+            )
+            for frame in ken_burns_frames_A_main:
+                video_writer.write(frame)
+
+        # --- Cross-Fade from Image A to Image B (next image `i+1`) ---
+        if i < num_narrations - 1 and frames_for_A_fade_out > 0:
+            # Calculate frame offset for Image A's fade-out component
+            # This is after its initial offset (if any) and its main display part.
+            frame_offset_A_fade_component = frame_offset_A_main + actual_frames_to_generate_A_main
+
+            kb_frames_A_for_fade_component = _apply_ken_burns_effect(
+                image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
+                movement_type=current_movement_type,
+                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                generate_count=frames_for_A_fade_out,
+                generate_from_frame_offset=frame_offset_A_fade_component
+            )
+
+            # Load Image B (next image)
+            next_img_bgr = cv2.imread(next_image_for_fade_path)
+            if next_img_bgr is None:
+                print(f"Error reading next image {next_image_for_fade_path} for cross-fade. Holding last frame of current image.")
+                last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else \
+                                     (kb_frames_A_for_fade_component[-1] if kb_frames_A_for_fade_component else None)
+                if last_frame_A_to_hold is None: # Still no frame, generate one
+                     temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
+                     if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
+
+                if last_frame_A_to_hold is not None:
+                    for _ in range(frames_for_A_fade_out): video_writer.write(last_frame_A_to_hold)
+                else: # Total fallback
+                    black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+                    for _ in range(frames_for_A_fade_out): video_writer.write(black_frame)
+            else:
+                # Determine full animation duration for Image B
+                next_narration_audio_path = os.path.join(narration_dir, f"narration_{(i + 1) + 1}.mp3") # index for narration is 1-based
+                next_segment_duration_ms = get_audio_duration_ms(next_narration_audio_path)
+                if next_segment_duration_ms == 0:
+                    print(f"Warning: Audio duration for next image {next_image_for_fade_path} is 0 for fade calculation. Defaulting to 1s.")
+                    next_segment_duration_ms = 1000
+
+                total_frames_for_segment_B = math.floor(next_segment_duration_ms / 1000 * frame_rate)
+                if total_frames_for_segment_B == 0 and next_segment_duration_ms > 0: total_frames_for_segment_B = 1
+                if total_frames_for_segment_B <= 0: # Fallback if it's still zero or less
+                    print(f"Warning: total_frames_for_segment_B for {next_image_for_fade_path} is {total_frames_for_segment_B}. Using frames_for_A_fade_out as fallback full duration for its KB portion.")
+                    total_frames_for_segment_B = frames_for_A_fade_out # Use fade duration as a rough guess
+
+                next_image_movement_type_index = (ken_burns_sequence_index + 1) % len(KEN_BURNS_SEQUENCE)
+                next_image_movement_type = KEN_BURNS_SEQUENCE[next_image_movement_type_index]
+
+                # Image B starts its KB from the beginning for the fade-in
+                # It generates 'frames_for_A_fade_out' frames, which is the first part of its own full KB animation.
+                kb_frames_B_for_fade_component = _apply_ken_burns_effect(
+                    image_bgr=next_img_bgr, video_width=video_width, video_height=video_height,
+                    movement_type=next_image_movement_type,
+                    full_animation_duration_frames=total_frames_for_segment_B, # Image B's own total KB duration
+                    generate_count=frames_for_A_fade_out, # Generate frames for the duration of the fade
+                    generate_from_frame_offset=0 # Start from the beginning of Image B's KB
+                )
+
+                num_blend_frames = min(len(kb_frames_A_for_fade_component), len(kb_frames_B_for_fade_component))
+                if num_blend_frames < frames_for_A_fade_out:
+                    print(f"Warning: Mismatch in generated KB frames for fade. Blending {num_blend_frames} of {frames_for_A_fade_out} expected frames.")
+
+                if num_blend_frames == 0:
+                    print(f"Error: Could not generate KB frames for fade. Holding last frame of current image.")
+                    last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else None
+                    if last_frame_A_to_hold is None:
+                        temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
+                        if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
+
+                    if last_frame_A_to_hold is not None:
+                        for _ in range(frames_for_A_fade_out): video_writer.write(last_frame_A_to_hold)
+                    else:
+                        black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+                        for _ in range(frames_for_A_fade_out): video_writer.write(black_frame)
+                else:
+                    for k in range(num_blend_frames):
+                        frame_A = kb_frames_A_for_fade_component[k]
+                        frame_B = kb_frames_B_for_fade_component[k]
+                        alpha = (k + 1) / frames_for_A_fade_out
+                        blended_frame = cv2.addWeighted(frame_A, 1.0 - alpha, frame_B, alpha, 0)
+                        video_writer.write(blended_frame)
+
+                    if num_blend_frames > 0 and num_blend_frames < frames_for_A_fade_out:
+                        last_blended_frame = cv2.addWeighted(
+                            kb_frames_A_for_fade_component[num_blend_frames-1],
+                            1.0 - (num_blend_frames / frames_for_A_fade_out),
+                            kb_frames_B_for_fade_component[num_blend_frames-1],
+                            (num_blend_frames / frames_for_A_fade_out), 0)
+                        for _ in range(frames_for_A_fade_out - num_blend_frames):
+                            video_writer.write(last_blended_frame)
+
+        else:
+            frames_written_so_far = len(ken_burns_frames_A_main)
+            remaining_frames_in_segment = total_frames_for_segment - frames_written_so_far
+
+            if remaining_frames_in_segment > 0:
+                last_frame_to_hold = None
+                if ken_burns_frames_A_main:
+                    last_frame_to_hold = ken_burns_frames_A_main[-1]
+                elif total_frames_for_segment > 0 :
+                    temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_main)
+                    if temp_A_frame: last_frame_to_hold = temp_A_frame[0]
+
+                if last_frame_to_hold is not None:
+                    for _ in range(remaining_frames_in_segment):
+                        video_writer.write(last_frame_to_hold)
+                else:
+                    print(f"Warning: No frames for image {i+1} in last segment/no fade. Writing black frames for {remaining_frames_in_segment} frames.")
+                    black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+                    for _ in range(remaining_frames_in_segment):
+                        video_writer.write(black_frame)
+
+        ken_burns_sequence_index += 1
+
     return True
 
 
