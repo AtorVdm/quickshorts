@@ -409,7 +409,7 @@ def _generate_visual_frames(
 
     image_files = sorted([
         os.path.join(image_dir, f) for f in os.listdir(image_dir)
-        if f.startswith("image_") and f.endswith(".webp")
+        if f.startswith("image_") and f.endswith(".png")
     ])
     num_images = len(image_files)
     num_narrations = len(narration_sentences)

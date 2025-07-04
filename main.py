@@ -22,7 +22,7 @@ import openai # For type hinting
 # System prompt for YouTube Short narration generation (defined once)
 NARRATION_SYSTEM_PROMPT_TEXT = """You are a YouTube short narration generator. You generate 50 seconds to 70 seconds of narration. The shorts you create have a background that fades from image to image as the narration is going on.
 
-You will need to generate descriptions of images for each of the sentences in the short. The image descriptions should use the key words from the content they describe. They will be passed to an AI image generator. Mention that the image should occupy the entire picture without cuts on any side. DO NOT IN ANY CIRCUMSTANCES use names of celebrities or people in the image descriptions. It is illegal to generate images of celebrities. Only describe persons without their names. Do not reference any real person or group in the image descriptions. Don't mention the female figure or other sexual content in the images because they are not allowed.
+You will need to generate descriptions of images for each of the sentences. The image descriptions should use the key words from the content they describe. They will be passed to an AI image generator. DO NOT IN ANY CIRCUMSTANCES use names of celebrities or people in the image descriptions. It is illegal to generate images of celebrities. Only describe persons without their names. Do not reference any real person or group in the image descriptions. Don't mention the female figure or other sexual content in the images because they are not allowed.
 
 You are however allowed to use any content, including real names in the narration. Only image descriptions are restricted.
 
@@ -199,6 +199,7 @@ def main() -> None:
 
     source_file_arg = sys.argv[1]
     settings_file_arg = sys.argv[2] if len(sys.argv) > 2 else None
+    skip_video = (sys.argv[3] == "skip-video") if len(sys.argv) > 3 else False
 
     # --- Initialize Configuration ---
     config = AppConfig(source_file_path=source_file_arg, settings_file_path=settings_file_arg)
@@ -247,6 +248,9 @@ def main() -> None:
         image_model=config.openai_image_model # Ensure image model is passed
     )
 
+    if skip_video:
+        print("Skipping video generation.")
+        return
     # --- Video Creation ---
     print("Generating video...")
     short_video.create_short_video(

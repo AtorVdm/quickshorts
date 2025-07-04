@@ -44,7 +44,7 @@ def create_from_data(
         if element.get("type") != "image":
             continue
         image_number += 1
-        image_name = f"image_{image_number}.webp"
+        image_name = f"image_{image_number}.png"
         image_full_path = os.path.join(output_dir, image_name)
 
         if os.path.exists(image_full_path):
