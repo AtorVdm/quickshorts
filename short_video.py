@@ -186,14 +186,12 @@ def _apply_ken_burns_effect(
     video_width: int,
     video_height: int,
     total_frames_for_effect: int,
-    movement_type: str,
-    start_progress: float = 0.0  # New parameter
+    movement_type: str
 ) -> List[np.ndarray]:
     """
     Applies a Ken Burns effect (pan and zoom) to an image.
-    Can start generating frames from a specific progress point in the effect.
     """
-    # print(f"Applying Ken Burns: {movement_type} for {total_frames_for_effect} frames, start_progress: {start_progress}")
+    # print(f"Applying Ken Burns: {movement_type} for {total_frames_for_effect} frames (actual)") # Original print
 
     frames = []
     img_h, img_w = image_bgr.shape[:2]
@@ -255,23 +253,12 @@ def _apply_ken_burns_effect(
     if total_frames_for_effect <= 0: total_frames_for_effect = 1 # Must generate at least one frame
 
     for i in range(total_frames_for_effect):
-        # Calculate progress for the current frame
-        # If total_frames_for_effect is 1, this frame represents the state at start_progress.
-        # If total_frames_for_effect > 1, interpolate progress from start_progress to 1.0.
-        current_frame_progress = 0.0
-        if total_frames_for_effect == 1:
-            current_frame_progress = start_progress
-        elif total_frames_for_effect > 1:
-            # Normalized progress within the requested number of frames (0 to 1)
-            normalized_frame_step = i / (total_frames_for_effect - 1)
-            # Scale this normalized progress to the remaining portion of the effect (start_progress to 1.0)
-            current_frame_progress = start_progress + (normalized_frame_step * (1.0 - start_progress))
+        progress = 0.0
+        if total_frames_for_effect > 1:
+            progress = i / (total_frames_for_effect - 1)
 
-        # Ensure progress does not exceed 1.0 due to floating point issues, though unlikely with this formula
-        current_frame_progress = min(current_frame_progress, 1.0)
-
-        current_x = int(round(start_x + (end_x - start_x) * current_frame_progress))
-        current_y = int(round(start_y + (end_y - start_y) * current_frame_progress))
+        current_x = int(round(start_x + (end_x - start_x) * progress))
+        current_y = int(round(start_y + (end_y - start_y) * progress))
 
         # Define the actual crop window, ensuring it's within image bounds
         # current_x, current_y is top-left of the crop on source
@@ -443,167 +430,53 @@ def _generate_visual_frames(
         current_movement_type = KEN_BURNS_SEQUENCE[ken_burns_sequence_index % len(KEN_BURNS_SEQUENCE)]
         print(f"Image {i+1}: Using Ken Burns effect '{current_movement_type}'")
 
-        # Determine the number of frames for the main Ken Burns display (before any fade-out)
-        # and the frames that will be part of the fade-out (if applicable).
+        # All frames for the segment are now allocated to the Ken Burns effect.
+        # The frames_per_fade variable is still calculated but not used to reduce frames_for_ken_burns.
+        frames_for_ken_burns = total_frames_for_segment
 
-        frames_for_kb_during_main_display = total_frames_for_segment
-        frames_for_kb_during_fade_out = 0
+        if frames_for_ken_burns <= 0:
+            # This handles cases where segment_duration_ms might be zero or lead to zero frames.
+            print(f"Skipping Ken Burns for image {i+1} as frames_for_ken_burns is {frames_for_ken_burns} (derived from total_frames_for_segment: {total_frames_for_segment}).")
+            ken_burns_sequence_index += 1 # Still advance sequence for next image
+            continue # Move to the next narration/image segment
 
-        if i < num_narrations - 1 and frames_per_fade > 0:
-            # If not the last segment and there's a fade, reserve frames for it.
-            frames_for_kb_during_fade_out = frames_per_fade
-            frames_for_kb_during_main_display = max(0, total_frames_for_segment - frames_per_fade)
+        # Generate Ken Burns frames
+        ken_burns_frames = _apply_ken_burns_effect(
+            current_img_bgr, video_width, video_height,
+            frames_for_ken_burns, current_movement_type
+        )
 
-            if frames_for_kb_during_main_display == 0 and total_frames_for_segment > 0:
-                # Segment is too short for main display + fade. Prioritize fade by allowing KB to happen only during fade.
-                # This means the Ken Burns effect for this image will only be visible during its fade-out.
-                frames_for_kb_during_fade_out = total_frames_for_segment
-                # print(f"Segment for image {i+1} is short. KB will occur only during its fade-out ({frames_for_kb_during_fade_out} frames).")
+        num_ken_burns_frames_generated = len(ken_burns_frames)
 
-        # Total frames the Ken Burns effect needs to generate for this image (main display + its part of a fade-out)
-        # This will be used if we generate all KB frames for current image at once.
-        # total_kb_frames_for_current_image = frames_for_kb_during_main_display + frames_for_kb_during_fade_out
-        # For now, we'll generate frames for main display, then handle fade separately.
+        # Write the generated Ken Burns frames
+        for frame_idx, frame in enumerate(ken_burns_frames):
+            video_writer.write(frame)
 
-        if total_frames_for_segment <= 0: # Renamed frames_for_ken_burns to total_frames_for_segment for clarity here
-            print(f"Skipping visual segment for image {i+1} as total_frames_for_segment is {total_frames_for_segment}.")
-            ken_burns_sequence_index += 1
-            continue
+        # If _apply_ken_burns_effect returned fewer frames than frames_for_ken_burns,
+        # or if it failed and returned no frames, we need to fill the remaining duration.
+        frames_written = num_ken_burns_frames_generated
+        remaining_frames_to_fill = frames_for_ken_burns - frames_written
 
-        # Generate Ken Burns frames for the main display part (before fade-out)
-
-        current_image_kb_start_progress = 0.0
-        # frames_per_fade is calculated once based on fade_duration_ms, assumed constant for all transitions
-        if i > 0 and frames_per_fade > 0: # If not the first image and fades are active
-            if total_frames_for_segment > 0: # Avoid division by zero
-                # The current image already showed 'frames_per_fade' of its KB effect
-                # during its fade-in (as Image B in the previous transition).
-                # So, its main display should start from that progress point.
-                current_image_kb_start_progress = min(1.0, frames_per_fade / total_frames_for_segment)
-            else: # total_frames_for_segment is 0, so progress is effectively 0 or 1.
-                current_image_kb_start_progress = 0.0 # Or 1.0 if we consider it "done"
-
-        ken_burns_frames_main = []
-        # Actual frames to generate for this main display phase might be less if some were already shown during fade-in
-        # However, frames_for_kb_during_main_display is the duration of the "static" part.
-        # The start_progress handles *where* in the animation to start.
-        # The count should still be frames_for_kb_during_main_display.
-        if frames_for_kb_during_main_display > 0:
-            ken_burns_frames_main = _apply_ken_burns_effect(
-                current_img_bgr, video_width, video_height,
-                frames_for_kb_during_main_display, current_movement_type,
-                start_progress=current_image_kb_start_progress # Apply the calculated start progress
-            )
-            for frame in ken_burns_frames_main:
-                video_writer.write(frame)
-
-        # --- Cross-Fade Logic ---
-        if i < num_narrations - 1 and frames_for_kb_during_fade_out > 0:
-            # This is the part of image A's KB effect that occurs *during* its fade out.
-            # It needs to start from the progress point where the main display left off.
-            # Requires _apply_ken_burns_effect to handle start_progress (Step 6).
-            start_progress_for_A_fade = 0.0
-            if total_frames_for_segment > 0: # Avoid division by zero if segment was meant to be 0 length
-                 start_progress_for_A_fade = frames_for_kb_during_main_display / total_frames_for_segment
-
-            # If frames_for_kb_during_main_display was 0 (KB only in fade), start_progress_for_A_fade is 0.
-            # This means _apply_ken_burns_effect will generate frames_for_kb_during_fade_out frames starting from beginning.
-            kb_frames_A_during_fade = _apply_ken_burns_effect(
-                current_img_bgr, video_width, video_height,
-                frames_for_kb_during_fade_out, current_movement_type,
-                start_progress=start_progress_for_A_fade # Anticipating Step 6 modification
-            )
-
-            # Load next image (Image B) and prepare its Ken Burns frames for the fade-in.
-            next_img_bgr = cv2.imread(next_image_for_fade_path)
-            if next_img_bgr is None:
-                print(f"Error reading next image {next_image_for_fade_path} for cross-fade. Holding last frame of current image.")
-                # Fallback: Hold the last frame of Image A's main display (if any) or its KB fade part.
-                last_frame_A = None
-                if kb_frames_A_during_fade: last_frame_A = kb_frames_A_during_fade[-1]
-                elif ken_burns_frames_main: last_frame_A = ken_burns_frames_main[-1]
-
-                if last_frame_A is not None:
-                    for _ in range(frames_for_kb_during_fade_out):
-                        video_writer.write(last_frame_A)
-                else: # No frames from A at all, write black
-                    black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
-                    for _ in range(frames_for_kb_during_fade_out):
-                        video_writer.write(black_frame)
+        if remaining_frames_to_fill > 0:
+            if num_ken_burns_frames_generated > 0:
+                # Hold the last successfully generated Ken Burns frame
+                last_good_frame = ken_burns_frames[-1]
+                print(f"Holding last Ken Burns frame for an additional {remaining_frames_to_fill} frames for image {i+1}.")
+                for _ in range(remaining_frames_to_fill):
+                    video_writer.write(last_good_frame)
             else:
-                next_movement_type_index = (ken_burns_sequence_index + 1) % len(KEN_BURNS_SEQUENCE)
-                next_movement_type = KEN_BURNS_SEQUENCE[next_movement_type_index]
-
-                # Image B's Ken Burns effect starts from its beginning for the fade-in.
-                kb_frames_B_during_fade = _apply_ken_burns_effect(
-                    next_img_bgr, video_width, video_height,
-                    frames_for_kb_during_fade_out, next_movement_type,
-                    start_progress=0.0 # Starts from beginning for Image B
-                )
-
-                # Ensure both lists of frames have the expected number for blending
-                # If one is short, it might be due to _apply_ken_burns_effect internal issues or very short source.
-                # We'll use the minimum length to avoid index errors.
-                num_blend_frames = min(len(kb_frames_A_during_fade), len(kb_frames_B_during_fade))
-                if num_blend_frames < frames_for_kb_during_fade_out:
-                    print(f"Warning: Mismatch in generated KB frames for fade between image {i+1} and {i+2}. Blending {num_blend_frames} frames.")
-
-                if num_blend_frames == 0 : # If either A or B failed to produce frames for fade
-                    print(f"Error: Could not generate Ken Burns frames for one or both images for fade. Holding last frame of current image or writing black.")
-                    last_frame_A = None
-                    if kb_frames_A_during_fade: last_frame_A = kb_frames_A_during_fade[-1] # Should be empty if num_blend_frames is 0 due to A
-                    elif ken_burns_frames_main: last_frame_A = ken_burns_frames_main[-1]
-
-                    if last_frame_A is not None:
-                        for _ in range(frames_for_kb_during_fade_out): # Fill duration
-                            video_writer.write(last_frame_A)
-                    else: # No frames from A at all, write black
-                        black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
-                        for _ in range(frames_for_kb_during_fade_out):
-                            video_writer.write(black_frame)
-                else:
-                    for k in range(num_blend_frames):
-                        frame_A = kb_frames_A_during_fade[k]
-                        frame_B = kb_frames_B_during_fade[k]
-                        alpha = (k + 1) / frames_for_kb_during_fade_out # Alpha for Image B (fading in)
-                        # Alpha for Image A is 1 - alpha_B
-                        blended_frame = cv2.addWeighted(frame_A, 1.0 - alpha, frame_B, alpha, 0)
-                        video_writer.write(blended_frame)
-
-                    # If num_blend_frames was less than frames_for_kb_during_fade_out, fill remaining.
-                    # This happens if one of the KB sequences for fade was shorter than expected.
-                    # We'll hold the last successfully blended frame.
-                    if num_blend_frames > 0 and num_blend_frames < frames_for_kb_during_fade_out:
-                        last_blended_frame = cv2.addWeighted(
-                            kb_frames_A_during_fade[num_blend_frames-1],
-                            1.0 - (num_blend_frames / frames_for_kb_during_fade_out),
-                            kb_frames_B_during_fade[num_blend_frames-1],
-                            num_blend_frames / frames_for_kb_during_fade_out,
-                            0)
-                        for _ in range(frames_for_kb_during_fade_out - num_blend_frames):
-                            video_writer.write(last_blended_frame)
-
-        else: # This is the last segment, or no fade needed (frames_for_kb_during_fade_out is 0)
-              # Ensure any remaining frames from total_frames_for_segment are filled if main display was short.
-            frames_written_so_far = len(ken_burns_frames_main)
-            remaining_frames_in_segment = total_frames_for_segment - frames_written_so_far
-            if remaining_frames_in_segment > 0:
-                if ken_burns_frames_main:
-                    last_main_frame = ken_burns_frames_main[-1]
-                    # print(f"Last segment or no fade: Holding last main KB frame for image {i+1} for {remaining_frames_in_segment} frames.")
-                    for _ in range(remaining_frames_in_segment):
-                        video_writer.write(last_main_frame)
-                else: # No main KB frames were generated (e.g. segment was very short and meant only for fade, but it's last segment)
-                      # Or _apply_ken_burns_effect failed for main display.
-                    print(f"Warning: No main KB frames for image {i+1}. Generating fallback for {remaining_frames_in_segment} frames.")
-                    fallback_frame = _create_frame_with_centered_image(
+                # _apply_ken_burns_effect produced no frames at all. Fallback to centered image.
+                print(f"Warning: Ken Burns effect for image {i+1} produced no frames. Writing centered image for {remaining_frames_to_fill} frames.")
+                fallback_frame = _create_frame_with_centered_image(
                                        _resize_image_to_fit_canvas(current_img_bgr, video_width, video_height),
                                        video_width, video_height)
-                    for _ in range(remaining_frames_in_segment):
-                        video_writer.write(fallback_frame)
-
+                for _ in range(remaining_frames_to_fill):
+                    video_writer.write(fallback_frame)
 
         ken_burns_sequence_index += 1 # Move to next effect in sequence for next image
+
+        # CROSS-FADE LOGIC HAS BEEN REMOVED.
+        # The loop will now proceed to the next image, resulting in a direct cut.
 
     return True
 
