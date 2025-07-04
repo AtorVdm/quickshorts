@@ -1,7 +1,9 @@
+import json
+
 from pydub import AudioSegment
 import subprocess
 import numpy as np
-import captacity # Assuming this is a third-party or custom library
+import captacity
 import math
 import cv2
 import os
@@ -706,6 +708,8 @@ def create_short_video(
     final_video_full_path = os.path.join(base_dir, final_output_filename)
     print(f"Adding captions to video, outputting to: {final_video_full_path}")
     try:
+        with open("test.txt", "w", encoding='utf-8') as f:
+            f.write(json.dumps(caption_segments))
         captacity.add_captions(
             video_file=video_with_narration_path,
             output_file=final_video_full_path,
@@ -839,7 +843,22 @@ def _create_caption_segments(narration_texts: List[str], narration_audio_dir: st
             current_offset_s += audio_duration_ms / 1000.0
             continue
 
-    return all_segments
+    # Deduplicate segments based on identical consecutive text
+    if not all_segments:
+        return []
+
+    deduplicated_segments: List[Dict[str, Any]] = [all_segments[0]]
+
+    for i in range(1, len(all_segments)):
+        current_segment = all_segments[i]
+        previous_segment = deduplicated_segments[-1]
+        # Compare the 'text' field, stripping whitespace for robustness
+        if current_segment.get("text", "").strip() != previous_segment.get("text", "").strip():
+            deduplicated_segments.append(current_segment)
+        else:
+            print(f"Removing duplicate caption segment: '{current_segment.get('text', '')[:50]}...'")
+
+    return deduplicated_segments
 
 
 def _offset_timestamps_in_segments(segments: List[Dict[str, Any]], offset_s: float) -> List[Dict[str, Any]]:
