@@ -20,7 +20,7 @@ from openai_client import initialize_openai_client # Corrected import
 import openai # For type hinting
 
 # System prompt for YouTube Short narration generation (defined once)
-NARRATION_SYSTEM_PROMPT_TEXT = """You are a YouTube short narration generator. You generate 40 seconds to 60 seconds of narration. The shorts you create have a background that fades from image to image as the narration is going on.
+NARRATION_SYSTEM_PROMPT_TEXT = """You are a YouTube short narration generator. You generate 50 seconds to 70 seconds of narration. The shorts you create have a background that fades from image to image as the narration is going on.
 
 You will need to generate descriptions of images for each of the sentences in the short. They will be passed to an AI image generator. DO NOT IN ANY CIRCUMSTANCES use names of celebrities or people in the image descriptions. It is illegal to generate images of celebrities. Only describe persons without their names. Do not reference any real person or group in the image descriptions. Don't mention the female figure or other sexual content in the images because they are not allowed.
 
@@ -72,8 +72,8 @@ class AppConfig:
         self.azure_region: Optional[str] = os.getenv("AZURE_REGION")
 
         # Model Settings
-        self.openai_script_model: str = "gpt-4o"
-        self.openai_image_model: str = "dall-e-3"
+        self.openai_script_model: str = "openai/gpt-4o"
+        self.openai_image_model: str = "openai/dall-e-3"
 
         # Video Settings
         self.video_width: int = 1080

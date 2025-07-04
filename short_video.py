@@ -198,11 +198,11 @@ def _apply_ken_burns_effect(
     frames = []
     img_h, img_w = image_bgr.shape[:2]
 
-    zoom_level = 0.8 # We see 80% of the image content, so effectively zoom in by 1/0.8 = 1.25
+    zoom_level = 0.9 # We see 80% of the image content, so effectively zoom in by 1/0.9 = 1.1
 
     # crop_w_on_source and crop_h_on_source are the dimensions of the window
     # cut from the original image. This window will be resized to video_width, video_height.
-    # For the effective zoom to be 1.25, this window should be 1/1.25 = 0.8 times
+    # For the effective zoom to be 1.1, this window should be 1/1.1 = 0.9 times
     # the video dimensions, if the image was already at video resolution.
     # More generally, this is the part of the *source* image that will be shown.
     # The size of this crop window on the source image needs to maintain the video's aspect ratio.
