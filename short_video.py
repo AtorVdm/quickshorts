@@ -345,13 +345,56 @@ def create_short_video(
         # If captacity fails, rename the video_with_narration to the final output name
         os.rename(video_with_narration_path, final_video_full_path)
 
-    # Clean up temporary files
+    # --- Add Background Music ---
+    video_after_captions_path = final_video_full_path # This is the video with narration and possibly captions
+    video_with_background_music_path = os.path.join(base_dir, f"final_with_bgm_{final_output_filename}")
+    background_music_file = "background.mp3" # Assuming it's in the root, relative to where script is run
+
+    if not os.path.exists(background_music_file):
+        print(f"Background music file '{background_music_file}' not found. Skipping adding background music.")
+        # If background music is skipped, the video_after_captions_path is the final one.
+        # If its name is already final_video_full_path, no rename needed.
+        # If it was an intermediate name that was supposed to be replaced by video_with_background_music_path,
+        # we need to ensure final_video_full_path is the correct one.
+        # Current logic: final_video_full_path is already the target from captioning.
+        # So, if background music is skipped, final_video_full_path is already correctly named.
+    else:
+        print(f"Adding background music from '{background_music_file}'...")
+        if _add_background_music(video_after_captions_path, background_music_file, video_with_background_music_path):
+            print(f"Successfully added background music. Final video at: {video_with_background_music_path}")
+            # Clean up the video_after_captions_path if it's different and exists
+            if video_after_captions_path != video_with_background_music_path and os.path.exists(video_after_captions_path):
+                os.remove(video_after_captions_path)
+            # Update final_video_full_path to the new video with background music
+            final_video_full_path = video_with_background_music_path
+        else:
+            print("Failed to add background music. The video without background music will be kept.")
+            # final_video_full_path remains as the video_after_captions_path
+
+    # --- Final Cleanup ---
+    # Ensure final_video_full_path (which might be video_with_background_music_path or video_after_captions_path)
+    # is named as original final_output_filename if they are different.
+    # This handles the case where video_with_background_music_path was created.
+    desired_final_path = os.path.join(base_dir, final_output_filename)
+    if os.path.exists(final_video_full_path) and final_video_full_path != desired_final_path:
+        print(f"Renaming '{final_video_full_path}' to '{desired_final_path}'")
+        if os.path.exists(desired_final_path): # remove if an older version exists
+            os.remove(desired_final_path)
+        os.rename(final_video_full_path, desired_final_path)
+        final_video_full_path = desired_final_path # update variable for final message
+
+    print(f"Final video processing complete. Output at: {final_video_full_path}")
+
+    # Clean up other temporary files
     if os.path.exists(temp_visuals_video_path):
         os.remove(temp_visuals_video_path)
-    if os.path.exists(video_with_narration_path) and video_with_narration_path != final_video_full_path :
-        # video_with_narration_path might have been renamed to final_video_full_path if captions failed or skipped
-        if os.path.exists(video_with_narration_path): # check again before removing
-             os.remove(video_with_narration_path)
+    # video_with_narration_path is either same as video_after_captions_path or was already cleaned up if captions were added.
+    # If captions were skipped, video_with_narration_path would be video_after_captions_path.
+    # This path should have been removed or renamed by the background music step if it was successful.
+    # Let's check for video_with_narration_path specifically if it's not the final output.
+    intermediate_narration_video = os.path.join(base_dir, "video_with_narration.mp4")
+    if os.path.exists(intermediate_narration_video) and intermediate_narration_video != final_video_full_path:
+        os.remove(intermediate_narration_video)
 
 
 def _create_caption_segments(narration_texts: List[str], narration_audio_dir: str) -> List[Dict[str, Any]]:
@@ -454,3 +497,115 @@ def _offset_timestamps_in_segments(segments: List[Dict[str, Any]], offset_s: flo
         new_segment["words"] = adjusted_words
         adjusted_segments.append(new_segment)
     return adjusted_segments
+
+
+def _add_background_music(
+    input_video_path: str,
+    background_music_path: str,
+    output_video_path: str,
+    background_volume_adjust: str = "-15dB"
+) -> bool:
+    """
+    Adds background music to a video file, mixing it with existing audio.
+
+    Args:
+        input_video_path: Path to the input video file.
+        background_music_path: Path to the background music file.
+        output_video_path: Path to save the video with background music.
+        background_volume_adjust: FFmpeg volume filter value for the background music.
+                                  Defaults to "-15dB" to make it quieter than main audio.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not os.path.exists(input_video_path):
+        print(f"Input video for background music not found: {input_video_path}")
+        return False
+    if not os.path.exists(background_music_path):
+        print(f"Background music file not found: {background_music_path}")
+        return False
+
+    # Check if input video has an audio stream
+    has_audio_command = [
+        'ffprobe',
+        '-v', 'error',
+        '-select_streams', 'a',
+        '-show_entries', 'stream=codec_type',
+        '-of', 'csv=p=0',
+        input_video_path
+    ]
+    try:
+        result = subprocess.run(has_audio_command, capture_output=True, text=True, check=True)
+        has_existing_audio = bool(result.stdout.strip())
+    except subprocess.CalledProcessError as e:
+        print(f"Error checking for existing audio stream in {input_video_path}: {e.stderr}")
+        # Proceed assuming no audio, ffmpeg will handle it or fail if it's critical
+        has_existing_audio = False
+    except FileNotFoundError:
+        print("ffprobe command not found. Make sure ffmpeg is installed and in PATH.")
+        print("Assuming video has existing audio for safety.") # Safer to assume audio
+        has_existing_audio = True
+
+
+    if has_existing_audio:
+        ffmpeg_command = [
+            'ffmpeg',
+            '-y',  # Overwrite output files without asking
+            '-i', input_video_path,
+            '-i', background_music_path,
+            '-filter_complex',
+            # Stream 0 audio (original), Stream 1 audio (background)
+            # Adjust volume of background music, then mix them.
+            # amix inputs=2, duration=longest: ensures mixing continues for the duration of the longest input
+            # -ac 2 forces stereo output, good for general compatibility
+            f"[1:a]volume={background_volume_adjust}[bg_audio];[0:a][bg_audio]amix=inputs=2:duration=longest:dropout_transition=2[out_audio]",
+            '-map', '0:v',      # Map video from the first input
+            '-map', '[out_audio]', # Map the mixed audio
+            '-c:v', 'copy',     # Copy video codec
+            '-c:a', 'aac',      # Encode audio to AAC
+            '-strict', 'experimental',
+            '-shortest',        # Finish encoding when the shortest input stream ends (typically the video)
+            output_video_path
+        ]
+    else:
+        # If no existing audio, just add the background music (looping if shorter than video)
+        # This also handles the case where the input video might be silent but has an audio track.
+        # If it truly has no audio track, ffmpeg will map 1:a.
+        # To make background music loop if it's shorter than video: add "-stream_loop -1" for the music input
+        # However, to keep it simple and avoid overly long audio if music is very short,
+        # we'll let it be as long as the music or video, whichever is shorter, by default.
+        # For true looping of short background music, a more complex command would be needed.
+        # The command below will result in audio being as long as the background music.
+        # If video is longer, it will have silence at the end. If music is longer, -shortest (if added for video) would cut it.
+        # Using -shortest here is important if the background music is longer than the video.
+        print(f"No existing audio stream detected in {input_video_path} or ffprobe failed. Adding background music directly.")
+        ffmpeg_command = [
+            'ffmpeg',
+            '-y',
+            '-i', input_video_path,
+            '-i', background_music_path,
+            '-filter_complex', f"[1:a]volume={background_volume_adjust}[bg_audio]",
+            '-map', '0:v',
+            '-map', '[bg_audio]', # Map the background audio
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-strict', 'experimental',
+            '-shortest', # Ensure audio stream doesn't make file longer than video
+            output_video_path
+        ]
+
+
+    try:
+        process = subprocess.run(ffmpeg_command, capture_output=True, text=True, check=True)
+        print(f"FFmpeg (background music) output: {process.stdout}")
+        if process.stderr:
+            print(f"FFmpeg (background music) errors: {process.stderr}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error running FFmpeg to add background music: {e}")
+        print(f"FFmpeg stdout: {e.stdout}")
+        print(f"FFmpeg stderr: {e.stderr}")
+        return False
+    except FileNotFoundError:
+        print("ffmpeg command not found. Make sure ffmpeg is installed and in PATH.")
+        return False
