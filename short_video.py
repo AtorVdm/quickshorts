@@ -475,8 +475,32 @@ def _generate_visual_frames(
                 # The "next" image for the fade needs to be prepared for its *own* Ken Burns starting point
                 # or just a standard centered view if we're not previewing the next KB state.
                 # For simplicity in fade, let's fade to a centered version of the next image.
-                next_img_resized_for_fade = _resize_image_to_fit_canvas(next_img_bgr_for_fade, video_width, video_height)
-                next_frame_for_fade = _create_frame_with_centered_image(next_img_resized_for_fade, video_width, video_height)
+                # MODIFICATION: Get the *first frame* of the *next* image's Ken Burns effect.
+
+                # Determine the movement type for the *next* image.
+                # The global ken_burns_sequence_index is for the *current* image.
+                # The next image will use ken_burns_sequence_index + 1.
+                next_movement_type_index = (ken_burns_sequence_index + 1) % len(KEN_BURNS_SEQUENCE)
+                next_movement_type = KEN_BURNS_SEQUENCE[next_movement_type_index]
+
+                # Generate only the first frame of the next image's Ken Burns effect.
+                # We need to pass total_frames_for_effect=1 to _apply_ken_burns_effect.
+                # The number of frames for the next segment isn't strictly needed here, as we only want the first frame.
+                # However, _apply_ken_burns_effect expects total_frames_for_effect.
+                # If total_frames_for_effect is 1, progress is 0, so it gives the start frame.
+                next_ken_burns_first_frames = _apply_ken_burns_effect(
+                    next_img_bgr_for_fade, video_width, video_height,
+                    1, # Only need the first frame
+                    next_movement_type
+                )
+                if next_ken_burns_first_frames:
+                    next_frame_for_fade = next_ken_burns_first_frames[0]
+                else:
+                    # Fallback if _apply_ken_burns_effect somehow failed for the next frame
+                    print(f"Warning: Could not get first Ken Burns frame for next image {next_image_for_fade_path}. Using centered image for fade target.")
+                    next_img_resized_for_fade = _resize_image_to_fit_canvas(next_img_bgr_for_fade, video_width, video_height)
+                    next_frame_for_fade = _create_frame_with_centered_image(next_img_resized_for_fade, video_width, video_height)
+
 
             # Ensure we don't generate more fade frames than available in total_frames_for_segment
             actual_fade_frames_count = min(frames_per_fade, total_frames_for_segment - frames_for_ken_burns)
