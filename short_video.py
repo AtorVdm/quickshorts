@@ -7,7 +7,8 @@ import captacity
 import math
 import cv2
 import os
-from typing import List, Dict, Any, Optional, Tuple # Added Tuple
+from typing import List, Dict, Any, Optional, Tuple  # Added Tuple
+
 
 def get_audio_duration_ms(audio_file_path: str) -> int:
     """
@@ -25,16 +26,16 @@ def get_audio_duration_ms(audio_file_path: str) -> int:
     except FileNotFoundError:
         print(f"Audio file not found: {audio_file_path}")
         return 0
-    except Exception as e: # Catch other pydub errors
+    except Exception as e:  # Catch other pydub errors
         print(f"Error reading audio file {audio_file_path}: {e}")
         return 0
 
 
 def _combine_narrations_and_add_to_video(
-    narration_sentences: List[str],
-    base_dir: str, # Renamed from output_dir for clarity, as it's the base for subfolders
-    input_video_path: str,
-    output_video_path: str
+        narration_sentences: List[str],
+        base_dir: str,  # Renamed from output_dir for clarity, as it's the base for subfolders
+        input_video_path: str,
+        output_video_path: str
 ) -> bool:
     """
     Combines individual narration audio files into a single track and adds it to the video.
@@ -52,7 +53,7 @@ def _combine_narrations_and_add_to_video(
     narration_files_dir = os.path.join(base_dir, "narrations")
 
     for i in range(len(narration_sentences)):
-        audio_file = os.path.join(narration_files_dir, f"narration_{i+1}.mp3")
+        audio_file = os.path.join(narration_files_dir, f"narration_{i + 1}.mp3")
         if not os.path.exists(audio_file):
             print(f"Narration file {audio_file} not found. Skipping.")
             continue
@@ -61,19 +62,18 @@ def _combine_narrations_and_add_to_video(
             full_narration_track += segment
         except Exception as e:
             print(f"Error loading narration segment {audio_file}: {e}")
-            return False # Abort if a segment can't be loaded
+            return False  # Abort if a segment can't be loaded
 
     if len(full_narration_track) == 0:
         print("No narration segments found or loaded. Video will not have narration.")
         # Copy input video to output path if no narration, to maintain workflow
         try:
-            if input_video_path != output_video_path: # Avoid copying to itself
+            if input_video_path != output_video_path:  # Avoid copying to itself
                 subprocess.run(['cp', input_video_path, output_video_path], check=True)
-            return True # Technically successful, but with no narration added
+            return True  # Technically successful, but with no narration added
         except subprocess.CalledProcessError as e:
             print(f"Error copying video when no narration: {e}")
             return False
-
 
     temp_narration_path = os.path.join(base_dir, "combined_narration.mp3")
     try:
@@ -87,11 +87,11 @@ def _combine_narrations_and_add_to_video(
         '-y',  # Overwrite output files without asking
         '-i', input_video_path,
         '-i', temp_narration_path,
-        '-map', '0:v',   # Map video from the first input (input_video_path)
-        '-map', '1:a',   # Map audio from the second input (temp_narration_path)
+        '-map', '0:v',  # Map video from the first input (input_video_path)
+        '-map', '1:a',  # Map audio from the second input (temp_narration_path)
         '-c:v', 'copy',  # Copy video codec (no re-encoding)
-        '-c:a', 'aac',   # Encode audio to AAC
-        '-strict', 'experimental', # Needed for some AAC configurations
+        '-c:a', 'aac',  # Encode audio to AAC
+        '-strict', 'experimental',  # Needed for some AAC configurations
         output_video_path
     ]
 
@@ -113,9 +113,9 @@ def _combine_narrations_and_add_to_video(
 
 
 def _resize_image_to_fit_canvas(
-    image: np.ndarray,
-    canvas_width: int,
-    canvas_height: int
+        image: np.ndarray,
+        canvas_width: int,
+        canvas_height: int
 ) -> np.ndarray:
     """
     Resizes an image to fit within specified dimensions while preserving aspect ratio.
@@ -147,9 +147,9 @@ def _resize_image_to_fit_canvas(
 
 
 def _create_frame_with_centered_image(
-    image_resized: np.ndarray,
-    video_width: int,
-    video_height: int
+        image_resized: np.ndarray,
+        video_width: int,
+        video_height: int
 ) -> np.ndarray:
     """Creates a black frame and centers the resized image onto it."""
     frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
@@ -183,14 +183,15 @@ KEN_BURNS_SEQUENCE = [
 ]
 ken_burns_sequence_index = 0
 
+
 def _apply_ken_burns_effect(
-    image_bgr: np.ndarray,
-    video_width: int,
-    video_height: int,
-    movement_type: str,
-    full_animation_duration_frames: int, # Total frames the KB effect would span if played fully
-    generate_count: int,                 # How many frames to generate in this call
-    generate_from_frame_offset: int = 0  # Starting frame number within the full animation
+        image_bgr: np.ndarray,
+        video_width: int,
+        video_height: int,
+        movement_type: str,
+        full_animation_duration_frames: int,  # Total frames the KB effect would span if played fully
+        generate_count: int,  # How many frames to generate in this call
+        generate_from_frame_offset: int = 0  # Starting frame number within the full animation
 ) -> List[np.ndarray]:
     """
     Applies a Ken Burns effect (pan and zoom) to an image, generating a specific segment of it.
@@ -200,7 +201,7 @@ def _apply_ken_burns_effect(
     frames = []
     img_h, img_w = image_bgr.shape[:2]
 
-    zoom_level = 0.9 # We see 80% of the image content, so effectively zoom in by 1/0.9 = 1.1
+    zoom_level = 0.9  # We see 80% of the image content, so effectively zoom in by 1/0.9 = 1.1
 
     # crop_w_on_source and crop_h_on_source are the dimensions of the window
     # cut from the original image. This window will be resized to video_width, video_height.
@@ -209,8 +210,8 @@ def _apply_ken_burns_effect(
     # More generally, this is the part of the *source* image that will be shown.
     # The size of this crop window on the source image needs to maintain the video's aspect ratio.
 
-    crop_w_on_source = int(round(video_width / (1/zoom_level))) # video_width * zoom_level
-    crop_h_on_source = int(round(video_height / (1/zoom_level))) # video_height * zoom_level
+    crop_w_on_source = int(round(video_width / (1 / zoom_level)))  # video_width * zoom_level
+    crop_h_on_source = int(round(video_height / (1 / zoom_level)))  # video_height * zoom_level
 
     # Ensure crop dimensions are at least 1x1
     crop_w_on_source = max(1, crop_w_on_source)
@@ -226,13 +227,12 @@ def _apply_ken_burns_effect(
     max_crop_y = img_h - crop_h_on_source
 
     # If image is smaller than crop window after zoom, center the crop.
-    if max_crop_x < 0: # Image width is less than the width of the crop window
-        start_x = end_x = (img_w - crop_w_on_source) // 2 # Negative offset, effectively
-        max_crop_x = (img_w - crop_w_on_source) // 2 # This will make the pan range 0
-    if max_crop_y < 0: # Image height is less than the height of the crop window
+    if max_crop_x < 0:  # Image width is less than the width of the crop window
+        start_x = end_x = (img_w - crop_w_on_source) // 2  # Negative offset, effectively
+        max_crop_x = (img_w - crop_w_on_source) // 2  # This will make the pan range 0
+    if max_crop_y < 0:  # Image height is less than the height of the crop window
         start_y = end_y = (img_h - crop_h_on_source) // 2
         max_crop_y = (img_h - crop_h_on_source) // 2
-
 
     if movement_type == "top_left_to_bottom_right":
         start_x, start_y = 0, 0
@@ -255,9 +255,9 @@ def _apply_ken_burns_effect(
 
     # Ensure generate_count is at least 0, and if full_animation_duration_frames is 0, handle that.
     if generate_count <= 0:
-        return frames # Return empty list if no frames are to be generated
+        return frames  # Return empty list if no frames are to be generated
 
-    if full_animation_duration_frames <=0: # Should not happen with current calling logic
+    if full_animation_duration_frames <= 0:  # Should not happen with current calling logic
         print(f"Warning: full_animation_duration_frames is {full_animation_duration_frames}. Cannot generate Ken Burns effect.")
         # Fallback: create 'generate_count' static frames based on start_x, start_y if possible
         # For simplicity, returning empty or black frames might be better.
@@ -277,7 +277,7 @@ def _apply_ken_burns_effect(
         elif full_animation_duration_frames > 1:
             progress = current_animation_frame_index / (full_animation_duration_frames - 1)
 
-        progress = min(1.0, max(0.0, progress)) # Clamp progress between 0.0 and 1.0
+        progress = min(1.0, max(0.0, progress))  # Clamp progress between 0.0 and 1.0
 
         current_x = int(round(start_x + (end_x - start_x) * progress))
         current_y = int(round(start_y + (end_y - start_y) * progress))
@@ -299,7 +299,7 @@ def _apply_ken_burns_effect(
         paste_y_offset = 0
 
         if current_x < 0:
-            actual_crop_w = img_w # crop the whole image width
+            actual_crop_w = img_w  # crop the whole image width
             crop_x1 = 0
             # The amount of black bar needed on the left
             paste_x_offset = int(round(abs(current_x) * (video_width / crop_w_on_source)))
@@ -307,7 +307,7 @@ def _apply_ken_burns_effect(
             actual_crop_w = min(crop_w_on_source, img_w - crop_x1)
 
         if current_y < 0:
-            actual_crop_h = img_h # crop the whole image height
+            actual_crop_h = img_h  # crop the whole image height
             crop_y1 = 0
             paste_y_offset = int(round(abs(current_y) * (video_height / crop_h_on_source)))
         else:
@@ -323,13 +323,13 @@ def _apply_ken_burns_effect(
             frames.append(black_frame)
             continue
 
-        cropped_image_part = image_bgr[crop_y1 : crop_y1 + actual_crop_h, crop_x1 : crop_x1 + actual_crop_w]
+        cropped_image_part = image_bgr[crop_y1: crop_y1 + actual_crop_h, crop_x1: crop_x1 + actual_crop_w]
 
         if cropped_image_part.size == 0:
-             print(f"Warning: Ken Burns cropped_image_part is empty. Creating black frame.")
-             black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
-             frames.append(black_frame)
-             continue
+            print(f"Warning: Ken Burns cropped_image_part is empty. Creating black frame.")
+            black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
+            frames.append(black_frame)
+            continue
 
         # Resize the (potentially partial) crop to fill the video frame dimensions
         # The target size for resize depends on whether we cropped less than desired due to image boundaries.
@@ -340,10 +340,10 @@ def _apply_ken_burns_effect(
         target_w_for_resize = video_width
         target_h_for_resize = video_height
 
-        if current_x < 0 or (crop_x1 + actual_crop_w < current_x + crop_w_on_source and current_x >=0) : # We are grabbing less width than the ideal crop window
-             target_w_for_resize = int(round(actual_crop_w * (video_width / crop_w_on_source)))
-        if current_y < 0 or (crop_y1 + actual_crop_h < current_y + crop_h_on_source and current_y >=0): # We are grabbing less height
-             target_h_for_resize = int(round(actual_crop_h * (video_height / crop_h_on_source)))
+        if current_x < 0 or (crop_x1 + actual_crop_w < current_x + crop_w_on_source and current_x >= 0):  # We are grabbing less width than the ideal crop window
+            target_w_for_resize = int(round(actual_crop_w * (video_width / crop_w_on_source)))
+        if current_y < 0 or (crop_y1 + actual_crop_h < current_y + crop_h_on_source and current_y >= 0):  # We are grabbing less height
+            target_h_for_resize = int(round(actual_crop_h * (video_height / crop_h_on_source)))
 
         target_w_for_resize = max(1, target_w_for_resize)
         target_h_for_resize = max(1, target_h_for_resize)
@@ -363,9 +363,9 @@ def _apply_ken_burns_effect(
         # If the image was larger and panned normally, paste_x_offset is 0.
         # If the image was smaller, paste_x_offset handles the left black bar.
         # We also need to handle the right black bar if target_w_for_resize < video_width.
-        if target_w_for_resize < video_width and paste_x_offset == 0 : # Centering for content smaller than video frame
+        if target_w_for_resize < video_width and paste_x_offset == 0:  # Centering for content smaller than video frame
             current_paste_x = (video_width - target_w_for_resize) // 2
-        if target_h_for_resize < video_height and paste_y_offset == 0 :
+        if target_h_for_resize < video_height and paste_y_offset == 0:
             current_paste_y = (video_height - target_h_for_resize) // 2
 
         # Ensure paste coordinates are within frame bounds
@@ -385,7 +385,7 @@ def _apply_ken_burns_effect(
 
         frames.append(final_frame)
 
-    if not frames: # Should have been handled by total_frames_for_effect >= 1
+    if not frames:  # Should have been handled by total_frames_for_effect >= 1
         print("Warning: Ken Burns effect produced no frames. Returning a single black frame.")
         black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
         frames.append(black_frame)
@@ -394,20 +394,20 @@ def _apply_ken_burns_effect(
 
 
 def _generate_visual_frames(
-    video_writer: cv2.VideoWriter,
-    narration_sentences: List[str],
-    image_dir: str,
-    narration_dir: str, # Needed for getting audio durations
-    video_width: int,
-    video_height: int,
-    frame_rate: int,
-    fade_duration_ms: int
+        video_writer: cv2.VideoWriter,
+        narration_sentences: List[str],
+        image_dir: str,
+        narration_dir: str,  # Needed for getting audio durations
+        video_width: int,
+        video_height: int,
+        frame_rate: int,
+        fade_duration_ms: int
 ) -> bool:
     """
     Generates and writes all visual frames (images with Ken Burns effect and transitions)
     to the video_writer.
     """
-    global ken_burns_sequence_index # Use the global index
+    global ken_burns_sequence_index  # Use the global index
 
     image_files = sorted([
         os.path.join(image_dir, f) for f in os.listdir(image_dir)
@@ -425,7 +425,6 @@ def _generate_visual_frames(
     if fade_duration_ms > 0 and frames_per_fade == 0:
         frames_per_fade = 1
 
-
     for i in range(num_narrations):
         current_image_path = image_files[i % num_images]
         # Determine next image for potential crossfade
@@ -438,25 +437,24 @@ def _generate_visual_frames(
             continue
 
         # Get duration of the current narration segment
-        narration_audio_path = os.path.join(narration_dir, f"narration_{i+1}.mp3")
+        narration_audio_path = os.path.join(narration_dir, f"narration_{i + 1}.mp3")
         segment_duration_ms = get_audio_duration_ms(narration_audio_path)
-        if segment_duration_ms == 0: # If audio duration is zero, try to make it a short default
+        if segment_duration_ms == 0:  # If audio duration is zero, try to make it a short default
             print(f"Warning: Audio duration for {narration_audio_path} is 0. Defaulting to 1s for frame calculation.")
-            segment_duration_ms = 1000 # Default to 1 second
+            segment_duration_ms = 1000  # Default to 1 second
 
         total_frames_for_segment = math.floor(segment_duration_ms / 1000 * frame_rate)
-        if total_frames_for_segment == 0 and segment_duration_ms > 0 : total_frames_for_segment = 1
-
+        if total_frames_for_segment == 0 and segment_duration_ms > 0: total_frames_for_segment = 1
 
         # Determine Ken Burns effect for the current image
         current_movement_type = KEN_BURNS_SEQUENCE[ken_burns_sequence_index % len(KEN_BURNS_SEQUENCE)]
-        print(f"Image {i+1}: Using Ken Burns effect '{current_movement_type}'")
+        print(f"Image {i + 1}: Using Ken Burns effect '{current_movement_type}'")
 
         # Determine frame allocation for current image (Image A)
         frames_for_A_main_display = total_frames_for_segment
         frames_for_A_fade_out = 0
 
-        if i < num_narrations - 1 and frames_per_fade > 0: # If not the last image and fade is active
+        if i < num_narrations - 1 and frames_per_fade > 0:  # If not the last image and fade is active
             frames_for_A_fade_out = frames_per_fade
             frames_for_A_main_display = max(0, total_frames_for_segment - frames_for_A_fade_out)
             if frames_for_A_main_display == 0 and total_frames_for_segment > 0:
@@ -464,7 +462,7 @@ def _generate_visual_frames(
                 frames_for_A_fade_out = total_frames_for_segment
 
         if total_frames_for_segment <= 0:
-            print(f"Skipping visual segment for image {i+1} as total_frames_for_segment is {total_frames_for_segment}.")
+            print(f"Skipping visual segment for image {i + 1} as total_frames_for_segment is {total_frames_for_segment}.")
             ken_burns_sequence_index += 1
             continue
 
@@ -472,7 +470,7 @@ def _generate_visual_frames(
         # --- Main Display for Image A (current image `i`) ---
         # Determine frame offset for Image A's main display (accounts for its own fade-in if i > 0)
         frame_offset_A_main = 0
-        if i > 0 and frames_per_fade > 0: # If Image A (current_img_bgr) faded in
+        if i > 0 and frames_per_fade > 0:  # If Image A (current_img_bgr) faded in
             # It already showed 'frames_per_fade' frames of its animation.
             frame_offset_A_main = frames_per_fade
             # We must ensure frames_for_A_main_display is not asking for more frames than available
@@ -493,12 +491,11 @@ def _generate_visual_frames(
             # The KB during main display should be what's left.
             actual_frames_to_generate_A_main = max(0, total_frames_for_segment - frame_offset_A_main - frames_for_A_fade_out)
 
-
-        if actual_frames_to_generate_A_main > 0 :
+        if actual_frames_to_generate_A_main > 0:
             ken_burns_frames_A_main = _apply_ken_burns_effect(
                 image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
                 movement_type=current_movement_type,
-                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                full_animation_duration_frames=total_frames_for_segment,  # Image A's own total KB duration
                 generate_count=actual_frames_to_generate_A_main,
                 generate_from_frame_offset=frame_offset_A_main
             )
@@ -514,7 +511,7 @@ def _generate_visual_frames(
             kb_frames_A_for_fade_component = _apply_ken_burns_effect(
                 image_bgr=current_img_bgr, video_width=video_width, video_height=video_height,
                 movement_type=current_movement_type,
-                full_animation_duration_frames=total_frames_for_segment, # Image A's own total KB duration
+                full_animation_duration_frames=total_frames_for_segment,  # Image A's own total KB duration
                 generate_count=frames_for_A_fade_out,
                 generate_from_frame_offset=frame_offset_A_fade_component
             )
@@ -524,19 +521,20 @@ def _generate_visual_frames(
             if next_img_bgr is None:
                 print(f"Error reading next image {next_image_for_fade_path} for cross-fade. Holding last frame of current image.")
                 last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else \
-                                     (kb_frames_A_for_fade_component[-1] if kb_frames_A_for_fade_component else None)
-                if last_frame_A_to_hold is None: # Still no frame, generate one
-                     temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
-                     if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
+                    (kb_frames_A_for_fade_component[-1] if kb_frames_A_for_fade_component else None)
+                if last_frame_A_to_hold is None:  # Still no frame, generate one
+                    temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1,
+                                                           frame_offset_A_fade_component)
+                    if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
 
                 if last_frame_A_to_hold is not None:
                     for _ in range(frames_for_A_fade_out): video_writer.write(last_frame_A_to_hold)
-                else: # Total fallback
+                else:  # Total fallback
                     black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
                     for _ in range(frames_for_A_fade_out): video_writer.write(black_frame)
             else:
                 # Determine full animation duration for Image B
-                next_narration_audio_path = os.path.join(narration_dir, f"narration_{(i + 1) + 1}.mp3") # index for narration is 1-based
+                next_narration_audio_path = os.path.join(narration_dir, f"narration_{(i + 1) + 1}.mp3")  # index for narration is 1-based
                 next_segment_duration_ms = get_audio_duration_ms(next_narration_audio_path)
                 if next_segment_duration_ms == 0:
                     print(f"Warning: Audio duration for next image {next_image_for_fade_path} is 0 for fade calculation. Defaulting to 1s.")
@@ -544,9 +542,10 @@ def _generate_visual_frames(
 
                 total_frames_for_segment_B = math.floor(next_segment_duration_ms / 1000 * frame_rate)
                 if total_frames_for_segment_B == 0 and next_segment_duration_ms > 0: total_frames_for_segment_B = 1
-                if total_frames_for_segment_B <= 0: # Fallback if it's still zero or less
-                    print(f"Warning: total_frames_for_segment_B for {next_image_for_fade_path} is {total_frames_for_segment_B}. Using frames_for_A_fade_out as fallback full duration for its KB portion.")
-                    total_frames_for_segment_B = frames_for_A_fade_out # Use fade duration as a rough guess
+                if total_frames_for_segment_B <= 0:  # Fallback if it's still zero or less
+                    print(
+                        f"Warning: total_frames_for_segment_B for {next_image_for_fade_path} is {total_frames_for_segment_B}. Using frames_for_A_fade_out as fallback full duration for its KB portion.")
+                    total_frames_for_segment_B = frames_for_A_fade_out  # Use fade duration as a rough guess
 
                 next_image_movement_type_index = (ken_burns_sequence_index + 1) % len(KEN_BURNS_SEQUENCE)
                 next_image_movement_type = KEN_BURNS_SEQUENCE[next_image_movement_type_index]
@@ -556,9 +555,9 @@ def _generate_visual_frames(
                 kb_frames_B_for_fade_component = _apply_ken_burns_effect(
                     image_bgr=next_img_bgr, video_width=video_width, video_height=video_height,
                     movement_type=next_image_movement_type,
-                    full_animation_duration_frames=total_frames_for_segment_B, # Image B's own total KB duration
-                    generate_count=frames_for_A_fade_out, # Generate frames for the duration of the fade
-                    generate_from_frame_offset=0 # Start from the beginning of Image B's KB
+                    full_animation_duration_frames=total_frames_for_segment_B,  # Image B's own total KB duration
+                    generate_count=frames_for_A_fade_out,  # Generate frames for the duration of the fade
+                    generate_from_frame_offset=0  # Start from the beginning of Image B's KB
                 )
 
                 num_blend_frames = min(len(kb_frames_A_for_fade_component), len(kb_frames_B_for_fade_component))
@@ -569,7 +568,8 @@ def _generate_visual_frames(
                     print(f"Error: Could not generate KB frames for fade. Holding last frame of current image.")
                     last_frame_A_to_hold = ken_burns_frames_A_main[-1] if ken_burns_frames_A_main else None
                     if last_frame_A_to_hold is None:
-                        temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_fade_component)
+                        temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1,
+                                                               frame_offset_A_fade_component)
                         if temp_A_frame: last_frame_A_to_hold = temp_A_frame[0]
 
                     if last_frame_A_to_hold is not None:
@@ -587,9 +587,9 @@ def _generate_visual_frames(
 
                     if num_blend_frames > 0 and num_blend_frames < frames_for_A_fade_out:
                         last_blended_frame = cv2.addWeighted(
-                            kb_frames_A_for_fade_component[num_blend_frames-1],
+                            kb_frames_A_for_fade_component[num_blend_frames - 1],
                             1.0 - (num_blend_frames / frames_for_A_fade_out),
-                            kb_frames_B_for_fade_component[num_blend_frames-1],
+                            kb_frames_B_for_fade_component[num_blend_frames - 1],
                             (num_blend_frames / frames_for_A_fade_out), 0)
                         for _ in range(frames_for_A_fade_out - num_blend_frames):
                             video_writer.write(last_blended_frame)
@@ -602,7 +602,7 @@ def _generate_visual_frames(
                 last_frame_to_hold = None
                 if ken_burns_frames_A_main:
                     last_frame_to_hold = ken_burns_frames_A_main[-1]
-                elif total_frames_for_segment > 0 :
+                elif total_frames_for_segment > 0:
                     temp_A_frame = _apply_ken_burns_effect(current_img_bgr, video_width, video_height, current_movement_type, total_frames_for_segment, 1, frame_offset_A_main)
                     if temp_A_frame: last_frame_to_hold = temp_A_frame[0]
 
@@ -610,7 +610,7 @@ def _generate_visual_frames(
                     for _ in range(remaining_frames_in_segment):
                         video_writer.write(last_frame_to_hold)
                 else:
-                    print(f"Warning: No frames for image {i+1} in last segment/no fade. Writing black frames for {remaining_frames_in_segment} frames.")
+                    print(f"Warning: No frames for image {i + 1} in last segment/no fade. Writing black frames for {remaining_frames_in_segment} frames.")
                     black_frame = np.zeros((video_height, video_width, 3), dtype=np.uint8)
                     for _ in range(remaining_frames_in_segment):
                         video_writer.write(black_frame)
@@ -621,14 +621,14 @@ def _generate_visual_frames(
 
 
 def create_short_video(
-    narration_sentences: List[str],
-    base_dir: str,
-    final_output_filename: str,
-    caption_settings: Optional[Dict[str, Any]] = None,
-    video_width: int = 1080,
-    video_height: int = 1920,
-    frame_rate: int = 30,
-    fade_duration_ms: int = 1000
+        narration_sentences: List[str],
+        base_dir: str,
+        final_output_filename: str,
+        caption_settings: Optional[Dict[str, Any]] = None,
+        video_width: int = 1080,
+        video_height: int = 1920,
+        frame_rate: int = 30,
+        fade_duration_ms: int = 1000
 ) -> None:
     """
     Creates a short video with images, narration, and captions.
@@ -668,16 +668,16 @@ def create_short_video(
 
     # Generate visual frames (images with transitions)
     if not _generate_visual_frames(
-        video_writer, narration_sentences, image_dir, narration_dir,
-        video_width, video_height, frame_rate, fade_duration_ms
+            video_writer, narration_sentences, image_dir, narration_dir,
+            video_width, video_height, frame_rate, fade_duration_ms
     ):
         # Error occurred in _generate_visual_frames (e.g., no images)
-        video_writer.release() # Release writer even if generation failed
-        cv2.destroyAllWindows() # Clean up any OpenCV windows
-        if os.path.exists(temp_visuals_video_path): # Remove potentially incomplete temp file
+        video_writer.release()  # Release writer even if generation failed
+        cv2.destroyAllWindows()  # Clean up any OpenCV windows
+        if os.path.exists(temp_visuals_video_path):  # Remove potentially incomplete temp file
             os.remove(temp_visuals_video_path)
         print("Video generation aborted due to issues in visual frame generation.")
-        return # Exit create_short_video
+        return  # Exit create_short_video
 
     video_writer.release()
     cv2.destroyAllWindows()
@@ -685,7 +685,7 @@ def create_short_video(
     # --- Audio Processing ---
     video_with_narration_path = os.path.join(base_dir, "video_with_narration.mp4")
     if not _combine_narrations_and_add_to_video(
-        narration_sentences, base_dir, temp_visuals_video_path, video_with_narration_path
+            narration_sentences, base_dir, temp_visuals_video_path, video_with_narration_path
     ):
         print("Failed to add narration to video. Aborting subsequent steps.")
         if os.path.exists(temp_visuals_video_path): os.remove(temp_visuals_video_path)
@@ -703,7 +703,6 @@ def create_short_video(
         if os.path.exists(temp_visuals_video_path): os.remove(temp_visuals_video_path)
         return
 
-
     # Add captions to video
     final_video_full_path = os.path.join(base_dir, final_output_filename)
     print(f"Adding captions to video, outputting to: {final_video_full_path}")
@@ -712,7 +711,7 @@ def create_short_video(
             video_file=video_with_narration_path,
             output_file=final_video_full_path,
             segments=caption_segments,
-            print_info=True, # Or make this configurable
+            print_info=True,  # Or make this configurable
             **caption_settings,
         )
         print(f"Successfully added captions. Final video at: {final_video_full_path}")
@@ -723,9 +722,9 @@ def create_short_video(
         os.rename(video_with_narration_path, final_video_full_path)
 
     # --- Add Background Music ---
-    video_after_captions_path = final_video_full_path # This is the video with narration and possibly captions
+    video_after_captions_path = final_video_full_path  # This is the video with narration and possibly captions
     video_with_background_music_path = os.path.join(base_dir, f"final_with_bgm_{final_output_filename}")
-    background_music_file = "resources/background.mp3" # Assuming it's in the root, relative to where script is run
+    background_music_file = "resources/background.mp3"  # Assuming it's in the root, relative to where script is run
 
     if not os.path.exists(background_music_file):
         print(f"Background music file '{background_music_file}' not found. Skipping adding background music.")
@@ -755,10 +754,10 @@ def create_short_video(
     desired_final_path = os.path.join(base_dir, final_output_filename)
     if os.path.exists(final_video_full_path) and final_video_full_path != desired_final_path:
         print(f"Renaming '{final_video_full_path}' to '{desired_final_path}'")
-        if os.path.exists(desired_final_path): # remove if an older version exists
+        if os.path.exists(desired_final_path):  # remove if an older version exists
             os.remove(desired_final_path)
         os.rename(final_video_full_path, desired_final_path)
-        final_video_full_path = desired_final_path # update variable for final message
+        final_video_full_path = desired_final_path  # update variable for final message
 
     print(f"Final video processing complete. Output at: {final_video_full_path}")
 
@@ -790,7 +789,7 @@ def _create_caption_segments(narration_texts: List[str], narration_audio_dir: st
     current_offset_s = 0.0
 
     for i, text_prompt in enumerate(narration_texts):
-        audio_file_path = os.path.join(narration_audio_dir, f"narration_{i+1}.mp3")
+        audio_file_path = os.path.join(narration_audio_dir, f"narration_{i + 1}.mp3")
 
         if not os.path.exists(audio_file_path):
             print(f"Audio file for transcription not found: {audio_file_path}. Skipping this segment.")
@@ -806,9 +805,9 @@ def _create_caption_segments(narration_texts: List[str], narration_audio_dir: st
                 # or some other specific exception for "local not possible"
                 transcribed_segments = captacity.transcriber.transcribe_locally(
                     audio_file=audio_file_path,
-                    prompt=text_prompt, # Use original text as prompt for better accuracy
+                    prompt=text_prompt,  # Use original text as prompt for better accuracy
                 )
-            except (ImportError, AttributeError, Exception) as e_local: # Catch broader errors for local
+            except (ImportError, AttributeError, Exception) as e_local:  # Catch broader errors for local
                 print(f"Local transcription failed for {audio_file_path} (prompt: '{text_prompt}'): {e_local}. Trying API.")
                 try:
                     transcribed_segments = captacity.transcriber.transcribe_with_api(
@@ -829,10 +828,10 @@ def _create_caption_segments(narration_texts: List[str], narration_audio_dir: st
 
             # Add current audio's duration to offset for the next iteration
             audio_duration_ms = get_audio_duration_ms(audio_file_path)
-            if audio_duration_ms == 0 and transcribed_segments: # If duration is 0 but we got segments, use segment end time
+            if audio_duration_ms == 0 and transcribed_segments:  # If duration is 0 but we got segments, use segment end time
                 current_offset_s = offset_adjusted_segments[-1]['end'] if offset_adjusted_segments else current_offset_s
             else:
-                 current_offset_s += audio_duration_ms / 1000.0
+                current_offset_s += audio_duration_ms / 1000.0
 
         except Exception as e:
             print(f"An unexpected error occurred during segment creation for {audio_file_path}: {e}")
@@ -850,8 +849,10 @@ def _create_caption_segments(narration_texts: List[str], narration_audio_dir: st
     for i in range(1, len(all_segments)):
         current_segment = all_segments[i]
         previous_segment = deduplicated_segments[-1]
+        segment_duration = float(current_segment.get("end", "")) - float(current_segment.get("start", ""))
         # Compare the 'text' field, stripping whitespace for robustness
-        if current_segment.get("text", "").strip() != previous_segment.get("text", "").strip():
+        # Check that the duration of the segment is larger than 1 second
+        if current_segment.get("text", "").strip() != previous_segment.get("text", "").strip() and segment_duration > 1:
             deduplicated_segments.append(current_segment)
         else:
             print(f"Removing duplicate caption segment: '{current_segment.get('text', '')[:50]}...'")
@@ -880,7 +881,7 @@ def _offset_timestamps_in_segments(segments: List[Dict[str, Any]], offset_s: flo
         new_segment["end"] = segment.get("end", 0) + offset_s
 
         adjusted_words = []
-        if "words" in segment and segment["words"] is not None: # Check for None explicitly
+        if "words" in segment and segment["words"] is not None:  # Check for None explicitly
             for word_info in segment["words"]:
                 new_word_info = word_info.copy()
                 new_word_info["start"] = word_info.get("start", 0) + offset_s
@@ -892,10 +893,10 @@ def _offset_timestamps_in_segments(segments: List[Dict[str, Any]], offset_s: flo
 
 
 def _add_background_music(
-    input_video_path: str,
-    background_music_path: str,
-    output_video_path: str,
-    background_volume_adjust: str = "-15dB"
+        input_video_path: str,
+        background_music_path: str,
+        output_video_path: str,
+        background_volume_adjust: str = "-15dB"
 ) -> bool:
     """
     Adds background music to a video file, mixing it with existing audio.
@@ -935,9 +936,8 @@ def _add_background_music(
         has_existing_audio = False
     except FileNotFoundError:
         print("ffprobe command not found. Make sure ffmpeg is installed and in PATH.")
-        print("Assuming video has existing audio for safety.") # Safer to assume audio
+        print("Assuming video has existing audio for safety.")  # Safer to assume audio
         has_existing_audio = True
-
 
     if has_existing_audio:
         ffmpeg_command = [
@@ -951,12 +951,12 @@ def _add_background_music(
             # amix inputs=2, duration=longest: ensures mixing continues for the duration of the longest input
             # -ac 2 forces stereo output, good for general compatibility
             f"[1:a]volume={background_volume_adjust}[bg_audio];[0:a][bg_audio]amix=inputs=2:duration=longest:dropout_transition=2[out_audio]",
-            '-map', '0:v',      # Map video from the first input
-            '-map', '[out_audio]', # Map the mixed audio
-            '-c:v', 'copy',     # Copy video codec
-            '-c:a', 'aac',      # Encode audio to AAC
+            '-map', '0:v',  # Map video from the first input
+            '-map', '[out_audio]',  # Map the mixed audio
+            '-c:v', 'copy',  # Copy video codec
+            '-c:a', 'aac',  # Encode audio to AAC
             '-strict', 'experimental',
-            '-shortest',        # Finish encoding when the shortest input stream ends (typically the video)
+            '-shortest',  # Finish encoding when the shortest input stream ends (typically the video)
             output_video_path
         ]
     else:
@@ -978,14 +978,13 @@ def _add_background_music(
             '-i', background_music_path,
             '-filter_complex', f"[1:a]volume={background_volume_adjust}[bg_audio]",
             '-map', '0:v',
-            '-map', '[bg_audio]', # Map the background audio
+            '-map', '[bg_audio]',  # Map the background audio
             '-c:v', 'copy',
             '-c:a', 'aac',
             '-strict', 'experimental',
-            '-shortest', # Ensure audio stream doesn't make file longer than video
+            '-shortest',  # Ensure audio stream doesn't make file longer than video
             output_video_path
         ]
-
 
     try:
         process = subprocess.run(ffmpeg_command, capture_output=True, text=True, check=True)
