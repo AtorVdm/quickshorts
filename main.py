@@ -19,7 +19,7 @@ import short_video
 from openai_client import initialize_openai_client
 import openai # For type hinting
 
-DEFAULT_NARRATION_PROMPT_FILENAME = "narration_prompt.txt"
+DEFAULT_NARRATION_PROMPT_FILENAME = "resources/narration_prompt.txt"
 
 class AppConfig:
     """Application configuration."""
@@ -145,11 +145,10 @@ def generate_script_and_image_prompts(
 ) -> Tuple[str, List[Dict[str, str]], List[str]]:
     """Generates script and image prompts. Loads from files if they exist."""
     response_file = os.path.join(config.base_output_dir, "response.txt")
-    data_file = os.path.join(config.base_output_dir, "data.json")
 
     raw_response_text: str
-    if os.path.exists(response_file) and os.path.exists(data_file):
-        print(f"Loading existing script from {os.path.basename(response_file)} and {os.path.basename(data_file)}.")
+    if os.path.exists(response_file) :
+        print(f"Loading existing script from {os.path.basename(response_file)}.")
         with open(response_file, 'r', encoding='utf-8') as f:
             raw_response_text = f.read()
     else:
@@ -181,12 +180,6 @@ def generate_script_and_image_prompts(
             sys.exit(1)
 
     parsed_data, narration_sentences = short_narration.parse_narration_text(raw_response_text)
-
-    # Save parsed data if it wasn't loaded or the data file didn't exist
-    if not os.path.exists(data_file) or not (os.path.exists(response_file) and os.path.exists(data_file)):
-        with open(data_file, "w", encoding='utf-8') as f:
-            json.dump(parsed_data, f, ensure_ascii=False, indent=2)
-        print(f"Parsed data saved to {data_file}")
 
     return raw_response_text, parsed_data, narration_sentences
 
