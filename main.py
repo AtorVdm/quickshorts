@@ -187,12 +187,12 @@ def generate_script_and_image_prompts(
 def main() -> None:
     """Main script execution."""
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <source_file_path> [settings_file_path] [skip-video]")
+        print(f"Usage: {sys.argv[0]} <source_file_path> [settings_file_path] [--with-video]")
         sys.exit(1)
 
     source_file_arg = sys.argv[1]
     settings_file_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    skip_video = (sys.argv[3] == "skip-video") if len(sys.argv) > 3 else False
+    create_video = (sys.argv[3] == "--with-video") if len(sys.argv) > 3 else False
 
     # Initialize Configuration
     config = AppConfig(source_file_path=source_file_arg, settings_file_path=settings_file_arg)
@@ -240,8 +240,8 @@ def main() -> None:
         image_model=config.openai_image_model
     )
 
-    if skip_video:
-        print("Skipping video generation as requested.")
+    if not create_video:
+        print("Skipping video generation.")
         return
 
     # Video Creation

@@ -13,10 +13,10 @@ $ export AZURE_API_KEY=YOUR_AZURE_API_KEY
 $ export AZURE_REGION=YOUR_AZURE_REGION
 ```
 
-Then, put your source content in a file, for example `some_story.txt` and run the `main.py`:
+Then, put your source content in a file, for example `some_story.txt` and run the `main.py` with the flag `--with-video`:
 
 ```console
-$ ./main.py some_story.txt
+$ ./main.py some_story.txt --with-video
 Generating script with OpenAI...
 Generating narration audio...
 Generating images...
@@ -27,6 +27,8 @@ Generating video elements...
 Rendering video...
 DONE! Here's your video: shorts/some_story/some_story.avi
 ```
+
+If you would like to stop after generating narration, audio and images (in order to manually correct and evaluate the result) - remove the `--with-video` flag.
 
 ## Caption styling
 
