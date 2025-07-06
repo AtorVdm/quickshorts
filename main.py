@@ -4,7 +4,7 @@ Main script for generating YouTube Shorts.
 
 This script takes a source text file, generates a narration script and image prompts using OpenAI,
 creates audio narration using Azure Cognitive Services, generates images using DALL-E,
-and finally combines them into a video with captions.
+and finally combines them into a video with captions and background music.
 """
 
 import json
@@ -19,7 +19,7 @@ import short_video
 from openai_client import initialize_openai_client
 import openai # For type hinting
 
-DEFAULT_NARRATION_PROMPT_FILENAME = "resources/narration_prompt.txt"
+NARRATION_PROMPT_FILENAME = "resources/narration_with_images_prompt.txt"
 
 class AppConfig:
     """Application configuration."""
@@ -56,29 +56,20 @@ class AppConfig:
         self.narration_system_prompt: str = "" # Loaded in _load_narration_prompt
 
         self._load_settings_from_file()
-        self._load_narration_prompt()
+        self._load_narration_prompt(NARRATION_PROMPT_FILENAME)
         self._setup_paths()
 
-    def _load_narration_prompt(self, prompt_filename: str = DEFAULT_NARRATION_PROMPT_FILENAME) -> None:
+    def _load_narration_prompt(self, prompt_filename) -> None:
         """Loads the narration system prompt from a file."""
         try:
-            # First, check if a custom prompt path is in settings_file_path (if one exists)
-            custom_prompt_path = None
-            if self.settings_file_path and os.path.exists(self.settings_file_path):
-                with open(self.settings_file_path, 'r', encoding='utf-8') as f:
-                    json_settings = json.load(f)
-                    custom_prompt_path = json_settings.get("NARRATION_SYSTEM_PROMPT_FILE")
-
-            prompt_file_to_load = custom_prompt_path or prompt_filename
-
-            with open(prompt_file_to_load, 'r', encoding='utf-8') as f:
+            with open(prompt_filename, 'r', encoding='utf-8') as f:
                 self.narration_system_prompt = f.read()
-            print(f"Loaded narration prompt from {prompt_file_to_load}")
+            print(f"Loaded narration prompt from {prompt_filename}")
         except FileNotFoundError:
-            print(f"Error: Narration prompt file not found at {prompt_file_to_load}. Please create it or check path.")
+            print(f"Error: Narration prompt file not found at {prompt_filename}. Please create it or check path.")
             sys.exit(1)
         except Exception as e:
-            print(f"Error reading narration prompt file {prompt_file_to_load}: {e}")
+            print(f"Error reading narration prompt file {prompt_filename}: {e}")
             sys.exit(1)
 
 
@@ -105,8 +96,6 @@ class AppConfig:
             self.fade_duration_ms = json_settings.get("FADE_DURATION_MS", self.fade_duration_ms)
 
             self.caption_settings = json_settings.get("CAPTION_SETTINGS", self.caption_settings)
-            # NARRATION_SYSTEM_PROMPT is now loaded by _load_narration_prompt
-            # but users can specify a different file via NARRATION_SYSTEM_PROMPT_FILE in JSON
             print(f"Loaded and applied settings from {self.settings_file_path}")
         except json.JSONDecodeError:
             print(f"Warning: Could not decode JSON from {self.settings_file_path}. Using default/env settings.")

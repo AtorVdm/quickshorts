@@ -2,6 +2,6 @@ __pycache__/
 shorts/
 *.txt
 !requirements.txt
-!/resources/narration_prompt.txt
+!/resources/narration_with_images_prompt.txt
 .idea
 *.json
