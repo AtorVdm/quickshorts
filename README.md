@@ -13,10 +13,10 @@ $ export AZURE_API_KEY=YOUR_AZURE_API_KEY
 $ export AZURE_REGION=YOUR_AZURE_REGION
 ```
 
-Then, put your source content in a file, for example `some_story.txt` and run the `main.py` with the flag `--with-video`:
+Then, put your source content in a file, for example `some_story.txt` and run the `image_based_short.py` with the flag `--with-video`:
 
 ```console
-$ ./main.py some_story.txt --with-video
+$ ./image_based_short.py some_story.txt --with-video
 Generating script with OpenAI...
 Generating narration audio...
 Generating images...
@@ -35,7 +35,7 @@ If you would like to stop after generating narration, audio and images (in order
 Optionally, you can specify a settings file to define settings for the caption styling:
 
 ```console
-$ ./main.py some_story.txt settings.json
+$ ./image_based_short.py some_story.txt settings.json
 ```
 
 The settings file can look like this, for example:
@@ -59,4 +59,12 @@ The settings file can look like this, for example:
     "shadow_strength": 1.0,
     "shadow_blur": 0.1
 }
+```
+
+### Troubleshooting
+
+When running the script you get an error `zsh: permission denied`. Give permission to run this file with:
+
+```shell
+chmod +x image_based_short.py
 ```

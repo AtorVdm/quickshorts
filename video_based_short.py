@@ -1,0 +1,1 @@
+# Placeholder for video based short generation
