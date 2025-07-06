@@ -1,26 +1,15 @@
 import base64
 import os
-from typing import List, Dict, Optional # Removed Any
+from typing import List, Dict
 import openai
 
-_openai_client: Optional[openai.OpenAI] = None
-
-def set_openai_client(client: openai.OpenAI) -> None:
-    """Sets the global OpenAI client for this module."""
-    global _openai_client
-    _openai_client = client
-
-def _get_openai_client() -> openai.OpenAI:
-    """Retrieves the configured OpenAI client."""
-    if _openai_client is None:
-        raise RuntimeError("OpenAI client for short_images not set.")
-    return _openai_client
+# _openai_client and related functions set_openai_client, _get_openai_client are removed.
 
 def create_from_data(
     data: List[Dict[str, str]],
     output_dir: str,
-    client: Optional[openai.OpenAI] = None,
-    image_model: str = "dall-e-3"  # Added image_model argument
+    client: openai.OpenAI,  # Changed to be a required argument
+    image_model: str = "dall-e-3"
 ) -> None:
     """
     Creates images from the given data using the provided OpenAI client and image model.
@@ -28,15 +17,16 @@ def create_from_data(
     Args:
         data: List of dicts, items with "type": "image" are processed.
         output_dir: Directory to save generated images.
-        client: Initialized OpenAI client. Uses global if None.
+        client: Initialized OpenAI client. This is now a required argument.
         image_model: The DALL-E model to use for image generation.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    active_client = client if client else _get_openai_client()
-    if not active_client:
-        print("Error: OpenAI client not available for image generation.")
+    # active_client is now directly the client passed as argument.
+    # No need for: active_client = client if client else _get_openai_client()
+    if not client: # Should not happen if type hint is openai.OpenAI, but good for safety
+        print("Error: OpenAI client not provided for image generation.")
         return
 
     image_number = 0
@@ -57,8 +47,8 @@ def create_from_data(
             continue
 
         full_prompt = description + ". Vertical image, fully filling the canvas."
-        # Pass the image_model to generate_image
-        generate_image(active_client, full_prompt, image_full_path, model=image_model)
+        # Pass the client and image_model to generate_image
+        generate_image(client, full_prompt, image_full_path, model=image_model)
 
 
 def generate_image(
