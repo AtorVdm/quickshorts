@@ -622,6 +622,7 @@ def _generate_visual_frames(
 
 def create_short_video(
         narration_sentences: List[str],
+        background_music_file: str,
         base_dir: str,
         final_output_filename: str,
         caption_settings: Optional[Dict[str, Any]] = None,
@@ -724,7 +725,6 @@ def create_short_video(
     # --- Add Background Music ---
     video_after_captions_path = final_video_full_path  # This is the video with narration and possibly captions
     video_with_background_music_path = os.path.join(base_dir, f"final_with_bgm_{final_output_filename}")
-    background_music_file = "resources/background.mp3"  # Assuming it's in the root, relative to where script is run
 
     if not os.path.exists(background_music_file):
         print(f"Background music file '{background_music_file}' not found. Skipping adding background music.")
