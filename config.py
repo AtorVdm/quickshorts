@@ -10,7 +10,7 @@ source material and initializing the OpenAI client.
 import json
 import sys
 import os
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, Optional
 
 import openai # For type hinting
 
