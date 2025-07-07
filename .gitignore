@@ -5,3 +5,4 @@ shorts/
 !/resources/narration_with_images_prompt.txt
 .idea
 *.json
+/resources/video.mp4
