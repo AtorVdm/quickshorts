@@ -9,6 +9,8 @@ import cv2
 import os
 from typing import List, Dict, Any, Optional, Tuple  # Added Tuple
 
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
+from moviepy.video.fx.all import loop, resize, crop
 
 def get_audio_duration_ms(audio_file_path: str) -> int:
     """
@@ -1000,3 +1002,158 @@ def _add_background_music(
     except FileNotFoundError:
         print("ffmpeg command not found. Make sure ffmpeg is installed and in PATH.")
         return False
+
+
+def create_short_from_background_video(
+        background_video_path: str,
+        narration_sentences: List[str], # Used for caption generation and counting segments
+        narration_audio_dir: str, # Path to the directory with narration_1.mp3, narration_2.mp3 etc.
+        background_music_file: str,
+        base_dir: str, # Base output directory for this short
+        final_output_filename: str, # Just the filename, e.g., "final_video.mp4"
+        caption_settings: Optional[Dict[str, Any]] = None,
+        video_width: int = 1080,
+        video_height: int = 1920,
+        frame_rate: int = 30
+) -> None:
+    """
+    Creates a short video using a pre-existing video as background, adding narration,
+    captions, and background music.
+    """
+    if caption_settings is None:
+        caption_settings = {}
+
+    # Define temporary file paths
+    temp_processed_background_path = os.path.join(base_dir, "temp_processed_background.mp4")
+    video_with_narration_path = os.path.join(base_dir, "video_with_narration.mp4")
+    video_after_captions_path = os.path.join(base_dir, f"temp_captions_{final_output_filename}")
+    final_video_full_path = os.path.join(base_dir, final_output_filename)
+
+    # Keep track of temporary files to clean up
+    temp_files_to_clean = [
+        temp_processed_background_path,
+        video_with_narration_path,
+        video_after_captions_path
+    ]
+
+    current_video_for_next_step = None
+
+    try:
+        # 1. Calculate total narration duration
+        total_narration_duration_ms = 0
+        if narration_sentences:
+            for i in range(len(narration_sentences)):
+                audio_file = os.path.join(narration_audio_dir, f"narration_{i + 1}.mp3")
+                if os.path.exists(audio_file):
+                    total_narration_duration_ms += get_audio_duration_ms(audio_file)
+                else:
+                    print(f"Warning: Narration audio file {audio_file} not found during duration calculation.")
+
+        if total_narration_duration_ms == 0:
+            if narration_sentences:
+                print("Warning: Total narration duration is 0ms despite sentences existing. Defaulting to 1s per sentence.")
+                total_narration_duration_ms = len(narration_sentences) * 1000
+            else:
+                print("No narration sentences. Defaulting video duration to 5 seconds.")
+                total_narration_duration_ms = 5000
+
+        narration_duration_sec = max(1.0, total_narration_duration_ms / 1000.0) # Ensure at least 1s
+
+        # 2. Load and prepare background video using MoviePy
+        print(f"Loading background video: {background_video_path}")
+        video_clip = VideoFileClip(background_video_path).without_audio()
+
+        if video_clip.duration < narration_duration_sec:
+            video_clip = loop(video_clip, duration=narration_duration_sec)
+        else:
+            video_clip = video_clip.subclip(0, narration_duration_sec)
+
+        target_aspect_ratio = video_width / video_height
+        if abs(video_clip.w / video_clip.h - target_aspect_ratio) > 0.01:
+            video_clip_resized = resize(video_clip, height=video_height) if video_clip.w / video_clip.h > target_aspect_ratio else resize(video_clip, width=video_width)
+            video_clip = crop(video_clip_resized, width=video_width, height=video_height, x_center=video_clip_resized.w / 2, y_center=video_clip_resized.h / 2)
+        else:
+            video_clip = resize(video_clip, newsize=(video_width, video_height))
+
+        video_clip = video_clip.set_fps(frame_rate)
+        print(f"Writing processed background video to: {temp_processed_background_path}")
+        video_clip.write_videofile(temp_processed_background_path, codec="libx264", audio=False, ffmpeg_params=['-pix_fmt', 'yuv420p'])
+        video_clip.close()
+        current_video_for_next_step = temp_processed_background_path
+
+        if not os.path.exists(current_video_for_next_step):
+            raise RuntimeError(f"Processed background video not created at {current_video_for_next_step}")
+
+        # 3. Combine narrations
+        if narration_sentences:
+            print("Adding narration to video...")
+            if not _combine_narrations_and_add_to_video(narration_sentences, base_dir, current_video_for_next_step, video_with_narration_path):
+                raise RuntimeError("Failed to add narration to video.")
+            current_video_for_next_step = video_with_narration_path
+        else:
+            print("No narration sentences, skipping narration merge.")
+            os.rename(current_video_for_next_step, video_with_narration_path) # Use processed bg as input for next
+            current_video_for_next_step = video_with_narration_path
+
+
+        # 4. Generate and add captions
+        caption_segments = []
+        if narration_sentences:
+            print("Creating segments for captions...")
+            caption_segments = _create_caption_segments(narration_sentences, narration_audio_dir)
+
+        if caption_segments:
+            print(f"Adding captions to video, outputting to: {video_after_captions_path}")
+            captacity.add_captions(video_file=current_video_for_next_step, output_file=video_after_captions_path, segments=caption_segments, print_info=True, **caption_settings)
+            current_video_for_next_step = video_after_captions_path
+        elif narration_sentences : # Narration existed, but no captions made
+             print("No caption segments generated. Proceeding without captions.")
+             os.rename(current_video_for_next_step, video_after_captions_path)
+             current_video_for_next_step = video_after_captions_path
+        else: # No narration, so no captions
+            print("No narration, skipping captions.")
+            os.rename(current_video_for_next_step, video_after_captions_path)
+            current_video_for_next_step = video_after_captions_path
+
+
+        # 5. Add Background Music
+        if not os.path.exists(background_music_file):
+            print(f"Background music file '{background_music_file}' not found. Skipping.")
+            os.rename(current_video_for_next_step, final_video_full_path)
+        else:
+            print(f"Adding background music from '{background_music_file}'...")
+            if not _add_background_music(current_video_for_next_step, background_music_file, final_video_full_path):
+                print("Failed to add background music. Saving video without new background music.")
+                os.rename(current_video_for_next_step, final_video_full_path) # Save the version before music attempt
+            else:
+                print(f"Successfully added background music. Final video at: {final_video_full_path}")
+
+        print(f"Video generation process for '{final_output_filename}' complete. Output at: {final_video_full_path}")
+
+    except Exception as e:
+        print(f"An error occurred during video creation: {e}")
+        # Ensure final output path doesn't have a corrupted/incomplete file if error occurred late
+        if os.path.exists(final_video_full_path) and (current_video_for_next_step != final_video_full_path or not os.path.exists(current_video_for_next_step)):
+             # If current_video_for_next_step was already renamed to final_video_full_path and then an error happened,
+             # or if final_video_full_path exists from a previous run and current_video_for_next_step is something else that failed.
+             # This logic is a bit tricky; safest might be to just ensure no zero-byte final file.
+             if os.path.getsize(final_video_full_path) == 0:
+                  os.remove(final_video_full_path)
+
+    finally:
+        # Final Cleanup
+        _cleanup_temp_files(base_dir, final_output_filename, temp_files_to_clean)
+
+
+def _cleanup_temp_files(base_dir: str, final_filename: str, temp_files: List[str]):
+    """Helper to clean up a list of temporary files, ensuring the final file is not among them."""
+    final_path = os.path.join(base_dir, final_filename)
+    for temp_file_path in temp_files:
+        # Ensure we don't delete the final successfully created video if it was part of temp_files list by mistake
+        # or if a temp file was renamed to final name.
+        if os.path.exists(temp_file_path) and temp_file_path != final_path:
+            try:
+                os.remove(temp_file_path)
+                print(f"Cleaned up temporary file: {temp_file_path}")
+            except OSError as e:
+                print(f"Error cleaning up temporary file {temp_file_path}: {e}")

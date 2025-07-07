@@ -19,6 +19,7 @@ import openai # For type hinting
 _initialized_openai_client: Optional[openai.OpenAI] = None
 
 NARRATION_PROMPT_FILENAME = "resources/narration_with_images_prompt.txt"
+NARRATION_VIDEO_PROMPT_FILENAME = "resources/narration_video_prompt.txt"
 
 class AppConfig:
     """Application configuration."""
@@ -55,11 +56,16 @@ class AppConfig:
         self.narration_system_prompt: str = "" # Loaded in _load_narration_prompt
 
         self._load_settings_from_file()
+        # By default, load the prompt for image-based shorts.
+        # video_based_short.py will be responsible for loading its own prompt.
         self._load_narration_prompt(NARRATION_PROMPT_FILENAME)
         self._setup_paths()
 
-    def _load_narration_prompt(self, prompt_filename) -> None:
+    def _load_narration_prompt(self, prompt_filename: str) -> None:
         """Loads the narration system prompt from a file."""
+        if not prompt_filename:
+            print("Error: No prompt filename provided to _load_narration_prompt.")
+            sys.exit(1)
         try:
             with open(prompt_filename, 'r', encoding='utf-8') as f:
                 self.narration_system_prompt = f.read()
