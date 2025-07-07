@@ -6,3 +6,4 @@ shorts/
 .idea
 *.json
 /resources/video.mp4
+setup_env.sh
