@@ -4,3 +4,4 @@ openai
 pydub
 numpy
 azure-core
+azure-cognitiveservices-speech
