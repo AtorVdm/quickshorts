@@ -14,6 +14,8 @@ from typing import Dict, Any, Optional
 
 import openai # For type hinting
 
+from openapi_utils import get_openai_key
+
 # Global variable to hold the initialized OpenAI client.
 # This is set by initialize_openai_client and retrieved by get_openai_client.
 _initialized_openai_client: Optional[openai.OpenAI] = None
@@ -36,7 +38,7 @@ class AppConfig:
         self.background_music_file_path: str = ""
 
         # API Keys & Endpoints (from environment or config file)
-        self.openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+        self.openai_api_key: Optional[str] = get_openai_key()
         self.openai_base_url: Optional[str] = os.getenv("OPENAI_API_URL")
         self.azure_api_key: Optional[str] = os.getenv("AZURE_API_KEY")
         self.azure_region: Optional[str] = os.getenv("AZURE_REGION")
