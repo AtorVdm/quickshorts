@@ -63,36 +63,20 @@ def generate_script_for_video(
             print(f"Error (video script generation): {e}")
             sys.exit(1)
 
-    # Parse narration sentences
-    narration_sentences = []
-    # Find content between ### markers
-    match = re.search(r"###(.*?)###", raw_response_text, re.DOTALL)
-    content_to_parse = raw_response_text
-    if match:
-        content_to_parse = match.group(1).strip()
-    else:
-        print("Warning: Could not find ### markers in the script. Parsing all lines for 'Narrator:'.")
-
-    for line in content_to_parse.split('\n'):
-        line = line.strip()
-        if line.startswith("Narrator:"):
-            sentence = line.replace("Narrator:", "", 1).strip().strip('"')
-            if sentence:
-                narration_sentences.append(sentence)
-
-    if not narration_sentences and not match: # If no ### and no Narrator: lines, try all non-empty lines
-         print("Warning: No 'Narrator:' lines found after failing to find ### markers. Attempting to use all non-empty lines from raw response.")
-         narration_sentences = [line for line in raw_response_text.split('\n') if line.strip()]
-    elif not narration_sentences and match: # Found ### but no "Narrator:" lines within
-        print("Warning: Found ### markers, but no 'Narrator:' lines within. Attempting to use all non-empty lines from content between markers.")
-        narration_sentences = [line for line in content_to_parse.split('\n') if line.strip()]
-
+    # Use short_narration.parse_narration_text to parse the script
+    # This function is expected to handle prompts that may or may not contain image descriptions.
+    # For video prompts, it should correctly extract only narration.
+    parsed_script_data, narration_sentences = short_narration.parse_narration_text(raw_response_text)
 
     if not narration_sentences:
-        print("Warning: No narration sentences parsed from the script. This might result in a silent video or errors.")
+        print("Warning: No narration sentences parsed by short_narration.parse_narration_text. This might result in a silent video or errors.")
+    if not parsed_script_data:
+        # This case should ideally be handled by parse_narration_text returning empty lists
+        # but as a safeguard:
+        print("Warning: Parsed script data is empty. Audio generation might fail or produce no audio.")
+        # Ensure parsed_script_data is an empty list if parse_narration_text returns None or similar for data part
+        parsed_script_data = []
 
-    # Create the data structure expected by short_narration.create_narration_audio_files
-    parsed_script_data = [{"narration": sentence} for sentence in narration_sentences]
 
     return raw_response_text, parsed_script_data, narration_sentences
 
