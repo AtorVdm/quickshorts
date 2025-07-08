@@ -89,13 +89,13 @@ def main_video() -> None:
 
     source_file_arg = sys.argv[1]
     settings_file_arg = None
-    video_background_arg = os.path.join("resources", "video.mp4") # Default
+    video_background_arg = os.path.join("resources", "video.webm") # Default
 
     # Process arguments more robustly
     # Example: video_based_short.py source.txt
     # Example: video_based_short.py source.txt settings.json
-    # Example: video_based_short.py source.txt resources/my_video.mp4
-    # Example: video_based_short.py source.txt settings.json resources/my_video.mp4
+    # Example: video_based_short.py source.txt resources/my_video.webm
+    # Example: video_based_short.py source.txt settings.json resources/my_video.webm
 
     idx = 2
     if len(sys.argv) > idx:
@@ -132,13 +132,13 @@ def main_video() -> None:
 
     if not os.path.exists(video_background_arg):
         print(f"Warning: Video background file '{video_background_arg}' not found.")
-        default_video_bg_path = os.path.join("resources", "video.mp4")
+        default_video_bg_path = os.path.join("resources", "video.webm")
         if video_background_arg != default_video_bg_path: # if specified was different from default
             print(f"Attempting to use default video background: '{default_video_bg_path}'")
             video_background_arg = default_video_bg_path
 
         if not os.path.exists(video_background_arg): # Check default again
-            print(f"Error: Default video background '{video_background_arg}' also not found. Please ensure a video background is available at resources/video.mp4 or provide a valid path.")
+            print(f"Error: Default video background '{video_background_arg}' also not found. Please ensure a video background is available at resources/video.webm or provide a valid path.")
             sys.exit(1)
 
 

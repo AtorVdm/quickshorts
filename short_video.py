@@ -1010,7 +1010,7 @@ def create_short_from_background_video(
         narration_audio_dir: str, # Path to the directory with narration_1.mp3, narration_2.mp3 etc.
         background_music_file: str,
         base_dir: str, # Base output directory for this short
-        final_output_filename: str, # Just the filename, e.g., "final_video.mp4"
+        final_output_filename: str, # Just the filename, e.g., "final_video.webm"
         caption_settings: Optional[Dict[str, Any]] = None,
         video_width: int = 1080,
         video_height: int = 1920,

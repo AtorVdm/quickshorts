@@ -80,7 +80,7 @@ def _generate_azure_tts_audio(
     ssml_text = f"""
     <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis"
            xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="en-GB">
-      <voice name="en-GB-OllieMultilingualNeural">
+      <voice name="en-GB-MiaNeural">
         <mstts:express-as>
           <prosody rate="+20%">
             {text}
