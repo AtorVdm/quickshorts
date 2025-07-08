@@ -114,7 +114,7 @@ class AppConfig:
         self.narration_output_dir = os.path.join(self.base_output_dir, "narrations")
         self.image_output_dir = os.path.join(self.base_output_dir, "images")
         self.final_video_file_path = os.path.join(self.base_output_dir, f"{self.short_name}.mp4")
-        self.background_music_file_path = os.path.join("resources", "background_aow.mp3")
+        self.background_music_file_path = os.path.join("resources", "background_drama.mp3")
 
         os.makedirs(self.base_output_dir, exist_ok=True)
         os.makedirs(self.narration_output_dir, exist_ok=True)

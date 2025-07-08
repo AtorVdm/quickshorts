@@ -1077,7 +1077,14 @@ def create_short_from_background_video(
 
         video_clip = video_clip.set_fps(frame_rate)
         print(f"Writing processed background video to: {temp_processed_background_path}")
-        video_clip.write_videofile(temp_processed_background_path, codec="libx264", audio=False, ffmpeg_params=['-pix_fmt', 'yuv420p'])
+        # Using CRF for quality. Lower CRF is better quality. 18-22 is often good.
+        # 'medium' preset is a good balance of compression and speed.
+        video_clip.write_videofile(
+            temp_processed_background_path,
+            codec="libx264",
+            audio=False,
+            ffmpeg_params=['-pix_fmt', 'yuv420p', '-preset', 'medium', '-crf', '20']
+        )
         video_clip.close()
         current_video_for_next_step = temp_processed_background_path
 
