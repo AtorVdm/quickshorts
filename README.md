@@ -2,6 +2,26 @@
 
 Quickshorts is a tool for making AI generated short videos. Captions with word highlighting are generated with [Captacity](https://github.com/unconv/captacity), which uses [OpenAI Whisper](https://github.com/openai/whisper).
 
+## System Dependencies
+
+Before running the project, ensure you have the following system-level dependencies installed:
+
+*   **FFmpeg**: Required for audio and video processing by libraries like `moviepy` and `pydub`.
+*   **ImageMagick**: May be required by `moviepy` for certain operations like text rendering or GIF processing.
+
+Example installation commands:
+
+*   **macOS (using Homebrew):**
+    ```shell
+    brew install ffmpeg imagemagick
+    ```
+*   **Debian/Ubuntu Linux:**
+    ```shell
+    sudo apt-get update && sudo apt-get install ffmpeg imagemagick
+    ```
+
+Without these, some features of the video generation might not work correctly or might produce warnings.
+
 ## Quick Start
 
 First, add your API-keys to the environment:
