@@ -5,8 +5,8 @@ from pydub import AudioSegment
 # import torch # Implicitly used by whisperx
 
 # --- Configuration (Hardcoded Values) ---
-INPUT_FOLDER_PATH = "resources/narrations_for_merge/" # Folder containing .mp3 files to merge
-PROMPT_TEXT_PATH = "resources/sample_prompt.txt"      # Default prompt file
+INPUT_FOLDER_PATH = "shorts/test_story/narrations" # Folder containing .mp3 files to merge
+PROMPT_TEXT_PATH = "shorts/test_story/input.txt"      # Default prompt file
 OUTPUT_TRANSCRIPTION_PATH = "merged_transcription_output.txt" # Default output file
 TEMP_MERGED_AUDIO_PATH = "temp_merged_audio.mp3"      # Temporary file for merged audio
 
@@ -120,7 +120,7 @@ def run_transcription_on_merged_audio():
 
     print("Starting transcription of merged audio...")
     try:
-        result = model.transcribe(audio, batch_size=BATCH_SIZE, initial_prompt=initial_prompt_text)
+        result = model.transcribe(audio, batch_size=BATCH_SIZE)
         print("Transcription complete.")
     except Exception as e:
         print(f"Error during transcription: {e}")
