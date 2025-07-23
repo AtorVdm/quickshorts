@@ -2,7 +2,8 @@ import os
 import glob
 import whisperx
 from pydub import AudioSegment
-# import torch # Implicitly used by whisperx
+import gc
+# import torch # Implicitly used by whisperx, and explicitly for cleanup if cuda
 
 # --- Configuration (Hardcoded Values) ---
 INPUT_FOLDER_PATH = "shorts/test_story/narrations" # Folder containing .mp3 files to merge
@@ -119,22 +120,106 @@ def run_transcription_on_merged_audio():
         return
 
     print("Starting transcription of merged audio...")
+    result = None # Ensure result is defined in case of early exit
+    model_a = None # Ensure model_a is defined for cleanup
     try:
-        result = model.transcribe(audio, batch_size=BATCH_SIZE)
+        result = model.transcribe(audio, batch_size=BATCH_SIZE, initial_prompt=initial_prompt_text)
         print("Transcription complete.")
+
+        # Clean up ASR model
+        print("Cleaning up ASR model...")
+        del model
+        if model_device == "cuda":
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except ImportError:
+                print("PyTorch not found, skipping cuda.empty_cache()")
+            except Exception as e:
+                print(f"Error during CUDA cache clear for ASR model: {e}")
+        gc.collect()
+        print("ASR model cleaned up.")
+
+        # 2. Align whisper output
+        print("Loading alignment model...")
+        # Note: language_code should come from the result of transcription
+        # If result is None or doesn't have 'language', this will fail.
+        # Adding a check for robustness, though ideally transcription should always yield a language.
+        language_code = result.get("language", "en") if result else "en"
+        if result is None:
+            print("Error: Transcription result is missing. Cannot proceed with alignment.")
+            if os.path.exists(TEMP_MERGED_AUDIO_PATH): os.remove(TEMP_MERGED_AUDIO_PATH)
+            return
+
+        model_a, metadata = whisperx.load_align_model(language_code=language_code, device=model_device)
+        print(f"Alignment model loaded for language: {language_code}")
+
+        print("Aligning transcription...")
+        # The BATCH_SIZE for alignment can be different, but not specified in original script context
+        # Using a general approach; whisperx.align handles segments internally.
+        aligned_result = whisperx.align(result["segments"], model_a, metadata, audio, model_device, return_char_alignments=False)
+        print("Alignment complete.")
+
+        # Clean up alignment model
+        print("Cleaning up alignment model...")
+        del model_a
+        if model_device == "cuda":
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except ImportError:
+                print("PyTorch not found, skipping cuda.empty_cache()")
+            except Exception as e:
+                print(f"Error during CUDA cache clear for alignment model: {e}")
+        gc.collect()
+        print("Alignment model cleaned up.")
+
     except Exception as e:
-        print(f"Error during transcription: {e}")
-        if os.path.exists(TEMP_MERGED_AUDIO_PATH): os.remove(TEMP_MERGED_AUDIO_PATH) # Cleanup
+        print(f"Error during transcription or alignment: {e}")
+        # Cleanup models if they were loaded before the error
+        if 'model' in locals() and model is not None:
+            del model
+            print("Cleaned up ASR model after error.")
+        if model_a is not None: # model_a is already defined outside the try block
+            del model_a
+            print("Cleaned up alignment model after error.")
+        if model_device == "cuda":
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except ImportError:
+                pass # PyTorch not found
+            except Exception as ec:
+                print(f"Error during CUDA cache clear after main error: {ec}")
+        gc.collect()
+        if os.path.exists(TEMP_MERGED_AUDIO_PATH): os.remove(TEMP_MERGED_AUDIO_PATH) # Cleanup temp audio
         return
 
-    print(f"Saving transcription to: {OUTPUT_TRANSCRIPTION_PATH}...")
+    print(f"Saving word-level transcription to: {OUTPUT_TRANSCRIPTION_PATH}...")
     try:
         with open(OUTPUT_TRANSCRIPTION_PATH, 'w', encoding='utf-8') as f:
-            if result and "segments" in result:
+            if aligned_result and "word_segments" in aligned_result:
+                if not aligned_result["word_segments"]:
+                    f.write("No words were aligned. The audio might be silent or too noisy.\n")
+                for word_info in aligned_result["word_segments"]:
+                    start_time = word_info.get('start', "N/A")
+                    end_time = word_info.get('end', "N/A")
+                    word_text = word_info.get('word', "[UNKNOWN_WORD]")
+                    score = word_info.get('score', "N/A")
+
+                    # Formatting, ensuring times are numbers before formatting
+                    start_str = f"{start_time:.2f}" if isinstance(start_time, (int, float)) else str(start_time)
+                    end_str = f"{end_time:.2f}" if isinstance(end_time, (int, float)) else str(end_time)
+                    score_str = f"{score:.2f}" if isinstance(score, (int, float)) else str(score)
+
+                    f.write(f"[{start_str}s - {end_str}s] {word_text} (score: {score_str})\n")
+            elif result and "segments" in result and not aligned_result.get("word_segments"):
+                # Fallback to segment transcription if word alignment somehow yielded empty but segments exist
+                f.write("Word alignment did not produce output, but segment transcription exists:\n")
                 for segment in result["segments"]:
-                    f.write(f"[{segment['start']:.2f}s - {segment['end']:.2f}s] {segment['text'].strip()}\n")
+                     f.write(f"SEGMENT: [{segment['start']:.2f}s - {segment['end']:.2f}s] {segment['text'].strip()}\n")
             else:
-                f.write("No segments transcribed or result format unexpected.\n")
+                f.write("No words or segments transcribed/aligned, or result format unexpected.\n")
         print("Transcription saved.")
     except Exception as e:
         print(f"Error saving transcription: {e}")

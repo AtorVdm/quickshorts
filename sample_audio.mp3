@@ -1,0 +1,5 @@
+This is a placeholder for a sample audio MP3 file.
+WhisperX processing will likely fail with this file as it's not a valid audio format.
+It is created to fulfill the plan step of having a sample audio file present.
+The main script `transcribe_with_whisperx.py` currently expects audio files in
+a specific subfolder (`shorts/test_story/narrations/`) to merge.
